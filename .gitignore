@@ -1,0 +1,9 @@
+# ignore everything in models directory
+models/
+# ignore virtual environment directories
+myenv/
+venv/
+# ignore Python cache files
+__pycache__/
+# ignore tb logs
+tb_logs/
