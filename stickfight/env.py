@@ -20,8 +20,8 @@ DAMAGE_CONSTANT = 0.05  # scales relative velocity into damage
 KNOCKBACK_SCALE = 30.0
 EPISODE_LENGTH = 2000
 APPROACH_REWARD_SCALE = 0.05  # small shaping coefficient for moving limbs toward opponent vulnerable points
-DAMP_LINEAR = 0.98  # per substep linear velocity damping
-DAMP_ANGULAR = 0.95  # per substep angular velocity damping
+DAMP_LINEAR = 0.995  # reduced damping to allow momentum buildup for recovery
+DAMP_ANGULAR = 0.98   # reduced angular damping for better joint movement
 
 # Ground collision type
 GROUND_COLLISION_TYPE = 99
@@ -54,10 +54,11 @@ class StickmanFightEnv(gym.Env):
         self.space = pymunk.Space()
         self.space.gravity = (0, -50)
 
-        # Ground static body (y=50 acts as floor)
+        # Ground static body (y=50 acts as floor) with improved physics properties
         ground_body = pymunk.Body(body_type=pymunk.Body.STATIC)
         ground_shape = pymunk.Segment(ground_body, (0, 50), (SCREEN_WIDTH, 50), 5)
-        ground_shape.friction = 1.0
+        ground_shape.friction = 1.5  # increased friction for better grip
+        ground_shape.elasticity = 0.1  # slight bounce to help with push-off
         ground_shape.collision_type = GROUND_COLLISION_TYPE
         self.space.add(ground_body, ground_shape)
 
@@ -67,7 +68,8 @@ class StickmanFightEnv(gym.Env):
         right_wall = pymunk.Segment(wall_body, (SCREEN_WIDTH, 50), (SCREEN_WIDTH, SCREEN_HEIGHT - 10), 5)
         ceiling = pymunk.Segment(wall_body, (0, SCREEN_HEIGHT - 10), (SCREEN_WIDTH, SCREEN_HEIGHT - 10), 5)
         for s in (left_wall, right_wall, ceiling):
-            s.friction = 1.0
+            s.friction = 1.5  # increased friction for better grip
+            s.elasticity = 0.1  # slight bounce to help with recovery
             s.collision_type = GROUND_COLLISION_TYPE  # reuse for simplicity (feet may touch walls/ceiling)
         self.space.add(wall_body, left_wall, right_wall, ceiling)
 
@@ -117,29 +119,29 @@ class StickmanFightEnv(gym.Env):
         self.space.on_collision(3, 2, post_solve=self._make_damage_callback(attacker_index=1, victim_index=0))
 
     def _setup_ground_handlers(self):
-        # Feet shapes collide with ground; register begin/separate callbacks
-        self.space.on_collision(GROUND_COLLISION_TYPE, 1, begin=self._ground_begin, separate=self._ground_separate)
-        self.space.on_collision(GROUND_COLLISION_TYPE, 3, begin=self._ground_begin, separate=self._ground_separate)
+        # All body parts can provide ground contact for reaction forces
+        # Agent 0: limb=1 vulnerable=2; Agent 1: limb=3 vulnerable=4
+        for collision_type in [1, 2, 3, 4]:  # all stickman parts
+            self.space.on_collision(GROUND_COLLISION_TYPE, collision_type, begin=self._ground_begin, separate=self._ground_separate)
 
     def _ground_begin(self, arbiter: pymunk.Arbiter, space: pymunk.Space, data):
         for shape in arbiter.shapes:
-            if hasattr(shape, 'foot') and shape.foot:
-                # Determine which agent
-                if shape in self.agent_a.feet_shapes:
-                    self.agent_a.mark_ground_contact(True)
-                elif shape in self.agent_b.feet_shapes:
-                    self.agent_b.mark_ground_contact(True)
+            # Any body part touching ground counts (not just feet)
+            if shape.collision_type in [1, 2]:  # Agent A parts
+                self.agent_a.mark_ground_contact(True, shape)
+            elif shape.collision_type in [3, 4]:  # Agent B parts
+                self.agent_b.mark_ground_contact(True, shape)
         # In Pymunk 7+, to reject collisions set arbiter.process_collision = False
         # We keep normal collision processing.
         return None
 
     def _ground_separate(self, arbiter: pymunk.Arbiter, space: pymunk.Space, data):
         for shape in arbiter.shapes:
-            if hasattr(shape, 'foot') and shape.foot:
-                if shape in self.agent_a.feet_shapes:
-                    self.agent_a.mark_ground_contact(False)
-                elif shape in self.agent_b.feet_shapes:
-                    self.agent_b.mark_ground_contact(False)
+            # Any body part leaving ground counts
+            if shape.collision_type in [1, 2]:  # Agent A parts
+                self.agent_a.mark_ground_contact(False, shape)
+            elif shape.collision_type in [3, 4]:  # Agent B parts
+                self.agent_b.mark_ground_contact(False, shape)
         return None
 
     def _make_damage_callback(self, attacker_index: int, victim_index: int):
@@ -275,10 +277,19 @@ class StickmanFightEnv(gym.Env):
             # Positive if self has more HP, negative if less (scaled to 0..1 range)
             advantage_reward = (hp_self - hp_opp) / MAX_HP
 
-        # Optional tiny standing incentive (kept small so HP rule dominates)
+        # Standing incentive (scaled to encourage recovery without overpowering HP advantage)
         perspective_agent = self.agent_a if self.self_index == 0 else self.agent_b
         head_y = perspective_agent.head.position.y
-        standing_bonus = 0.001 if head_y > 120 else 0.0
+        
+        # Progressive standing bonus based on height and recovery
+        if head_y > 150:  # fully upright
+            standing_bonus = 0.01
+        elif head_y > 120:  # partially upright  
+            standing_bonus = 0.005
+        elif head_y > 90 and perspective_agent.ground_contacts <= 2:  # recovering
+            standing_bonus = 0.002  
+        else:  # prone or too low
+            standing_bonus = -0.002  # small penalty for staying down
 
         return advantage_reward + standing_bonus
 
