@@ -42,7 +42,8 @@ def main():
             if model:
                 obs, _ = env.reset()
                 for _ in range(args.episode_steps):
-                    action, _ = model.predict(obs, deterministic=True)
+                    action, _ = model.predict(obs, deterministic=False)
+                    #print(action)
                     obs, _, term, trunc, _ = env.step(action)
                     env.render()
                     if term or trunc:

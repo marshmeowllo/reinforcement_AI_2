@@ -31,10 +31,11 @@ HIP_TORQUE = 4000.0
 KNEE_TORQUE = 4000.0
 SPINE_TORQUE = 6000.0
 
-# Proportional gain mapping angle error -> motor target angular velocity (rad/s)
-# Increased for more responsive control needed for ground recovery
-BASE_P_GAIN = 8.0
-MAX_MOTOR_RATE = 15.0
+# Motor controller gains
+# Rebalanced: lower P to reduce saturation, higher D for damping, more rate headroom
+BASE_P_GAIN = 18.0
+DERIVATIVE_GAIN = 7.0
+MAX_MOTOR_RATE = 25.0
 
 class Stickman:
     """Stickman ragdoll composed of multiple Pymunk bodies and joints.
@@ -70,6 +71,10 @@ class Stickman:
         self.feet_shapes = []  # track ground contact
         self.ground_contacts = 0
         self.ground_contact_shapes = set()  # track which specific shapes are touching ground
+        
+        # Diagnostic tracking
+        self.step_counter = 0
+        self.saturation_history = []
 
         # Collision type assignment.
         # Agent 0: limb=1 vulnerable=2; Agent 1: limb=3 vulnerable=4
@@ -84,6 +89,7 @@ class Stickman:
 
     def _add_part(self, body: pymunk.Body, shape: pymunk.Shape, name: str, vulnerable=False, limb=False, foot=False):
         # Group shapes per agent so self-collision is disabled while retaining collisions with other agents & ground.
+        # User requirement: only the head should collide with the agent's own shapes. Leave head ungrouped.
         shape.filter = pymunk.ShapeFilter(group=self.agent_index + 1)
         # Add slight restitution for recovery assistance and increase friction
         shape.elasticity = 0.1 if foot else 0.05  # feet get more bounce for push-off
@@ -201,21 +207,21 @@ class Stickman:
         # Elbows
         pivot(l_lower_arm_body, l_upper_arm_body, (l_upper_arm_body.position.x - UPPER_ARM_LENGTH / 2, l_upper_arm_body.position.y))
         # Elbows swing back and forth symmetrically
-        l_el_limit = limit(l_lower_arm_body, l_upper_arm_body, -1.2, 1.2)
+        l_el_limit = limit(l_lower_arm_body, l_upper_arm_body, -1.6, 1.6)
         register_joint_pair(l_lower_arm_body, l_upper_arm_body)
         self.joint_angle_limits.append((l_el_limit.min, l_el_limit.max))
         pivot(r_lower_arm_body, r_upper_arm_body, (r_upper_arm_body.position.x + UPPER_ARM_LENGTH / 2, r_upper_arm_body.position.y))
-        r_el_limit = limit(r_lower_arm_body, r_upper_arm_body, -1.2, 1.2)
+        r_el_limit = limit(r_lower_arm_body, r_upper_arm_body, -1.6, 1.6)
         register_joint_pair(r_lower_arm_body, r_upper_arm_body)
         self.joint_angle_limits.append((r_el_limit.min, r_el_limit.max))
         # Hips
         pivot(l_upper_leg_body, lower_torso_body, (x - TORSO_WIDTH / 4, lower_torso_body.position.y - LOWER_TORSO_HEIGHT / 2))
         # Hips swing both directions
-        l_hip_limit = limit(l_upper_leg_body, lower_torso_body, -1.2, 1.2)
+        l_hip_limit = limit(l_upper_leg_body, lower_torso_body, -1.6, 1.6)
         register_joint_pair(l_upper_leg_body, lower_torso_body)
         self.joint_angle_limits.append((l_hip_limit.min, l_hip_limit.max))
         pivot(r_upper_leg_body, lower_torso_body, (x + TORSO_WIDTH / 4, lower_torso_body.position.y - LOWER_TORSO_HEIGHT / 2))
-        r_hip_limit = limit(r_upper_leg_body, lower_torso_body, -1.2, 1.2)
+        r_hip_limit = limit(r_upper_leg_body, lower_torso_body, -1.6, 1.6)
         register_joint_pair(r_upper_leg_body, lower_torso_body)
         self.joint_angle_limits.append((r_hip_limit.min, r_hip_limit.max))
         # Knees
@@ -234,25 +240,8 @@ class Stickman:
         # Append spine angle limits as last action index
         self.joint_angle_limits.append((spine_limit.min, spine_limit.max))
 
-        # Passive springs for realistic joint behavior
+        # Springs removed: full control via motors + PD; prevents passive bias that caused action saturation.
         self.springs: List[pymunk.DampedRotarySpring] = []
-        spring_params = [
-            (800.0, 400.0),   # neck
-            (1200.0, 600.0),  # L shoulder
-            (1200.0, 600.0),  # R shoulder
-            (1000.0, 500.0),  # L elbow
-            (1000.0, 500.0),  # R elbow
-            (3000.0, 1500.0), # L hip
-            (3000.0, 1500.0), # R hip
-            (2500.0, 1200.0), # L knee
-            (2500.0, 1200.0), # R knee
-            (4000.0, 2000.0), # spine
-        ]
-        for (a, b), (stiff, damp) in zip(self.joint_pairs, spring_params):
-            # Rest angle 0 for neutral pose
-            spring = pymunk.DampedRotarySpring(a, b, 0.0, stiff, damp)
-            self.space.add(spring)
-            self.springs.append(spring)
 
         # Create motors aligned with joint_pairs/action indices
         torque_by_index = [
@@ -267,9 +256,12 @@ class Stickman:
             KNEE_TORQUE,          # 8 R knee
             SPINE_TORQUE,         # 9 spine
         ]
+        self.base_motor_forces: List[float] = []
         for i, (a, b) in enumerate(self.joint_pairs):
             m = pymunk.SimpleMotor(a, b, 0.0)
-            m.max_force = torque_by_index[i]
+            base_force = torque_by_index[i]
+            m.max_force = base_force
+            self.base_motor_forces.append(base_force)
             self.space.add(m)
             self.motors.append(m)
 
@@ -283,6 +275,10 @@ class Stickman:
         expected = 10
         if len(action) != expected:
             raise ValueError(f"Action length {len(action)} invalid, expected {expected}")
+        
+        self.step_counter += 1
+        saturation_count = 0
+        diagnostic_data = []
 
         def wrap_pi(a: float) -> float:
             return (a + math.pi) % (2 * math.pi) - math.pi
@@ -302,7 +298,6 @@ class Stickman:
         ]
 
         for i, (a_body, b_body) in enumerate(self.joint_pairs):
-            # Desired target within physical joint limits
             min_ang, max_ang = self.joint_angle_limits[i]
             mid = 0.5 * (min_ang + max_ang)
             half = 0.5 * (max_ang - min_ang)
@@ -310,39 +305,87 @@ class Stickman:
             target = max(-1.0, min(1.0, target))
             signed_target = target * control_signs[i]
             target_angle = mid + half * signed_target
-            # Current relative angle (a - b) wrapped
             curr_rel = wrap_pi(a_body.angle - b_body.angle)
-            # Clamp desired to limits (safety)
+            # Limit target to physical range
             if target_angle < min_ang:
                 target_angle = min_ang
             elif target_angle > max_ang:
                 target_angle = max_ang
-            # Proportional control -> target relative angular velocity
             error = wrap_pi(target_angle - curr_rel)
-            rate = BASE_P_GAIN * error
-            
-            # Recovery assistance: boost torque when on ground for key joints
+            rel_ang_vel = a_body.angular_velocity - b_body.angular_velocity
+            # PD controller: command relative angular velocity (motor.rate) proportional to angle error and
+            # damped by relative angular velocity to curb overshoot.
+            rate = BASE_P_GAIN * error - DERIVATIVE_GAIN * rel_ang_vel
+
             recovery_boost = 1.0
-            if self.ground_contacts > 0:  # if touching ground
-                # Boost hip, knee, and spine motors for getting up
-                if i in [5, 6, 7, 8, 9]:  # hip, knee, spine indices
+            if self.ground_contacts > 0 and i in [5, 6, 7, 8, 9]:
+                # Adaptive boost based on posture and magnitude of error (reduced to prevent over-saturation)
+                if self.is_prone():
                     recovery_boost = 2.0
-                    # Extra boost if stickman is prone (lying down)
-                    if self.is_prone():
-                        recovery_boost = 4.0  # maximum assistance when lying down
-                    # Additional boost for significant angle corrections
-                    elif abs(error) > 0.3:  # significant angle error
-                        recovery_boost = 3.0
-            
+                elif abs(error) > 0.3:
+                    recovery_boost = 1.6
+                else:
+                    recovery_boost = 1.3
             rate *= recovery_boost
-            
-            # Clamp to avoid instability
             max_rate = MAX_MOTOR_RATE * recovery_boost
+            
+            # Check saturation BEFORE clamping
+            is_saturated = abs(rate) >= max_rate * 0.98
+            if is_saturated:
+                saturation_count += 1
+            
             if rate > max_rate:
                 rate = max_rate
             elif rate < -max_rate:
                 rate = -max_rate
-            self.motors[i].rate = rate
+            motor = self.motors[i]
+            motor.rate = rate
+            # Adaptive max_force: higher when far from target, lower near target to reduce jitter.
+            span = max_ang - min_ang
+            norm_err = abs(error) / span if span > 1e-6 else 0.0
+            # Shape scaling curve (smooth ramp): base 0.4 -> 1.0 as error grows; extra boost if prone recovery.
+            force_scale = 0.4 + 0.6 * min(1.0, norm_err / 0.5)
+            if self.ground_contacts > 0 and i in [5,6,7,8,9] and self.is_prone():
+                force_scale = min(1.4, force_scale * 1.3)
+            motor.max_force = self.base_motor_forces[i] * force_scale
+            
+            # Collect diagnostic data for key joints
+            if i in [5, 6, 7, 8]:  # hips and knees
+                diagnostic_data.append({
+                    'joint': i,
+                    'action': action[i],
+                    'error': error,
+                    'rate': rate,
+                    'max_rate': max_rate,
+                    'saturated': is_saturated,
+                    'force_scale': force_scale
+                })
+            
+            # Collect diagnostic data for key joints
+            if i in [5, 6, 7, 8]:  # hips and knees
+                diagnostic_data.append({
+                    'joint': i,
+                    'action': action[i],
+                    'error': error,
+                    'rate': rate,
+                    'max_rate': max_rate,
+                    'saturated': is_saturated,
+                    'force_scale': force_scale
+                })
+        
+        # Log saturation summary every 50 steps
+        self.saturation_history.append(saturation_count)
+        if self.step_counter % 50 == 0:
+            avg_sat = sum(self.saturation_history[-50:]) / min(50, len(self.saturation_history))
+            print(f"\n[Agent {self.agent_index}] Step {self.step_counter}: Saturated motors {saturation_count}/10 (avg: {avg_sat:.1f})")
+            if diagnostic_data:
+                print(f"  Sample diagnostics (hips/knees):")
+                for d in diagnostic_data[:2]:  # show first 2
+                    joint_names = ['L_Hip', 'R_Hip', 'L_Knee', 'R_Knee']
+                    idx = [5, 6, 7, 8].index(d['joint'])
+                    print(f"    {joint_names[idx]}: action={d['action']:+.2f} error={d['error']:+.3f} "
+                          f"rate={d['rate']:+.1f}/{d['max_rate']:.1f} {'[SAT]' if d['saturated'] else ''} "
+                          f"force_scale={d['force_scale']:.2f}")
 
     def joint_states(self) -> Tuple[List[float], List[float]]:
         angles = []

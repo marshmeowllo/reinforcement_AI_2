@@ -18,7 +18,7 @@ TIME_STEP = 1.0 / 120.0  # physics tick
 MAX_HP = 100.0
 DAMAGE_CONSTANT = 0.05  # scales relative velocity into damage
 KNOCKBACK_SCALE = 30.0
-EPISODE_LENGTH = 2000
+EPISODE_LENGTH = 3000
 APPROACH_REWARD_SCALE = 0.05  # small shaping coefficient for moving limbs toward opponent vulnerable points
 DAMP_LINEAR = 0.995  # reduced damping to allow momentum buildup for recovery
 DAMP_ANGULAR = 0.98   # reduced angular damping for better joint movement
@@ -98,20 +98,17 @@ class StickmanFightEnv(gym.Env):
         self._setup_ground_handlers()
 
     def _aggregate_limb_distance(self) -> float:
-        """Sum of min distance from each attacking limb of self agent to opponent vulnerable points."""
+        """Distance between self agent's torso and opponent's torso."""
         if not (self.agent_a and self.agent_b):
             return 0.0
         self_agent = self.agent_a if self.self_index == 0 else self.agent_b
         opp_agent = self.agent_b if self.self_index == 0 else self.agent_a
-        limb_pts = self_agent.get_limb_points()
-        vuln = opp_agent.get_vulnerable_points()
-        targets = [vuln['head'], vuln['torso']]
-        total = 0.0
-        for limb_name in ['l_hand', 'r_hand', 'l_foot', 'r_foot']:
-            lx, ly = limb_pts[limb_name]
-            d_min = min(((lx - tx)**2 + (ly - ty)**2)**0.5 for tx, ty in targets)
-            total += d_min
-        return total
+        
+        # Use torso position for approach reward
+        p1 = self_agent.parts['upper_torso'].position
+        p2 = opp_agent.parts['upper_torso'].position
+        dist = ((p1.x - p2.x)**2 + (p1.y - p2.y)**2)**0.5
+        return dist
 
     def _setup_collision_handlers(self):
         # Use Space.on_collision per Pymunk 7.2+ API
@@ -272,7 +269,7 @@ class StickmanFightEnv(gym.Env):
         hp_opp = self.hp_b if self.self_index == 0 else self.hp_a
 
         if hp_self == hp_opp:
-            advantage_reward = -0.1  # tie penalty
+            advantage_reward = -0.01  # tie penalty
         else:
             # Positive if self has more HP, negative if less (scaled to 0..1 range)
             advantage_reward = (hp_self - hp_opp) / MAX_HP
@@ -281,12 +278,19 @@ class StickmanFightEnv(gym.Env):
         perspective_agent = self.agent_a if self.self_index == 0 else self.agent_b
         head_y = perspective_agent.head.position.y
         
-        # Progressive standing bonus based on height and recovery
-        if head_y > 150:  # fully upright
+        # Calculate average foot height
+        l_foot_y = perspective_agent.parts['l_lower_leg'].position.y
+        r_foot_y = perspective_agent.parts['r_lower_leg'].position.y
+        feet_y = (l_foot_y + r_foot_y) / 2.0
+        
+        height_diff = head_y - feet_y
+        
+        # Progressive standing bonus based on relative height (head vs feet)
+        if height_diff > 110:  # fully upright (approx 2/3 of total height)
             standing_bonus = 0.01
-        elif head_y > 120:  # partially upright  
+        elif height_diff > 80:  # partially upright  
             standing_bonus = 0.005
-        elif head_y > 90 and perspective_agent.ground_contacts <= 2:  # recovering
+        elif height_diff > 60 and perspective_agent.ground_contacts <= 2:  # recovering
             standing_bonus = 0.002  
         else:  # prone or too low
             standing_bonus = -0.002  # small penalty for staying down
@@ -374,8 +378,6 @@ class StickmanFightEnv(gym.Env):
             if event.type == pygame.QUIT:
                 pygame.quit()
         self.screen.fill((30, 30, 30))
-
-        # Draw ground
 
         # Pymunk's coordinates have origin at bottom-left; Pygame top-left. We'll flip y.
         def to_pygame(p):

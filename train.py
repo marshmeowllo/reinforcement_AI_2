@@ -26,6 +26,7 @@ Launch viewer separately:
 import os
 import argparse
 import torch
+import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, BaseCallback, CallbackList
@@ -48,10 +49,12 @@ class SelfPlayCallback(BaseCallback):
     def __init__(self, warmup_steps, snapshot_interval, checkpoint_interval, device, verbose=0):
         super().__init__(verbose)
         self.warmup_steps = warmup_steps
+        self.half_warmup_steps = warmup_steps // 2
         self.snapshot_interval = snapshot_interval
         self.checkpoint_interval = checkpoint_interval
         self.device = device
         self.opponent_model = None
+        self.static_attached = False
 
     def _attach_opponent_policy(self):
         if hasattr(self.training_env, "envs"):
@@ -66,6 +69,22 @@ class SelfPlayCallback(BaseCallback):
             )
         if self.verbose:
             print("[SelfPlay] Opponent policy attached to env 0")
+
+    def _attach_static_opponent(self):
+        if self.static_attached:
+            return
+        def _static_policy(obs):
+            # Return zero action vector (no movement). Mimic SB3 predict signature.
+            action_dim = 10  # fixed motor count per env spec
+            return np.zeros((action_dim,), dtype=np.float32), None
+        if hasattr(self.training_env, "envs"):
+            env0 = self.training_env.envs[0]
+            env0.set_opponent_policy(_static_policy)
+        elif hasattr(self.training_env, "env_method"):
+            self.training_env.env_method("set_opponent_policy", _static_policy, indices=0)
+        self.static_attached = True
+        if self.verbose:
+            print(f"[SelfPlay] Static no-movement opponent attached at {self.num_timesteps} timesteps")
 
     def _make_snapshot(self):
         path = os.path.join("models", "snapshots")
@@ -87,6 +106,8 @@ class SelfPlayCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         t = self.num_timesteps
+        if t == self.half_warmup_steps:
+            self._attach_static_opponent()
         if t == self.warmup_steps:
             self._make_snapshot()
         if self.opponent_model and t % self.snapshot_interval == 0 and t > self.warmup_steps:
@@ -134,6 +155,7 @@ def main():
         learning_rate=3e-4,  # consider 2e-4 if instability observed with larger action dim
         n_steps=n_steps,
         batch_size=256,
+        ent_coef=0.01,
         gamma=0.99,
         device="cpu",
     )
