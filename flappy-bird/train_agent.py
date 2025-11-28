@@ -25,7 +25,7 @@ def main():
 
     print("Starting training...")
     # Train the agent
-    # Increased timesteps because game is slower (more frames per pipe)
+    # 100,000 timesteps should be enough to see some progress
     total_timesteps = 200000 
     model.learn(total_timesteps=total_timesteps)
     print("Training finished.")    # Save the model

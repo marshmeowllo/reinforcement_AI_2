@@ -15,12 +15,12 @@ class FlappyBirdEnv(gym.Env):
         self.window_height = 500
         self.window_size = (self.window_width, self.window_height)
         self.gravity = 0.25
-        self.flap_strength = -6.0
-        self.max_velocity = 10.0
+        self.flap_strength = -5.0
+        self.max_velocity = 8.0
         self.pipe_speed = 2.0
         self.pipe_gap_size = 150
         self.pipe_frequency = 1500 # ms (not used directly in step, using distance)
-        self.pipe_dist_spawn = 250 # pixels between pipes
+        self.pipe_dist_spawn = 200 # pixels between pipes
         
         # Bird properties
         self.bird_x = 50
@@ -35,9 +35,10 @@ class FlappyBirdEnv(gym.Env):
         # Action: 0 = do nothing, 1 = flap
         self.action_space = spaces.Discrete(2)
         
-        # Observation: [bird_y, bird_vel, dist_to_next_pipe, next_pipe_gap_y]
-        # We use -inf to inf for simplicity, though values are bounded in practice
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
+        # Observation: 
+        # [bird_y, bird_vel] + 3 * [dist_x, dist_y] for next 3 pipes
+        # Total 8 values
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(8,), dtype=np.float32)
         
         self.render_mode = render_mode
         self.window = None
@@ -189,28 +190,31 @@ class FlappyBirdEnv(gym.Env):
         })
 
     def _get_obs(self):
-        # Find the next pipe
-        next_pipe = None
-        for pipe in self.pipes:
-            if pipe['x'] + self.pipe_width > self.bird_x:
-                next_pipe = pipe
-                break
+        # Get next 3 pipes
+        pipes_obs = []
         
-        if next_pipe is None:
-            # Should not happen if we spawn correctly, but fallback
-            dist_to_pipe = self.window_width
-            gap_y = self.window_height / 2
-        else:
-            dist_to_pipe = next_pipe['x'] - self.bird_x
-            gap_y = next_pipe['gap_y'] + (self.pipe_gap_size / 2) # Center of gap
-            
-        # Normalize observations for better neural network convergence
-        # Neural networks work best when inputs are in a similar range (e.g., 0 to 1 or -1 to 1)
+        # Filter pipes that are ahead of the bird (or overlapping)
+        future_pipes = [p for p in self.pipes if p['x'] + self.pipe_width > self.bird_x]
+        
+        for i in range(3):
+            if i < len(future_pipes):
+                pipe = future_pipes[i]
+                dist_x = pipe['x'] - self.bird_x
+                gap_center_y = pipe['gap_y'] + (self.pipe_gap_size / 2)
+                dist_y = gap_center_y - self.bird_y
+                
+                # Normalize
+                pipes_obs.append(dist_x / self.window_width)
+                pipes_obs.append(dist_y / self.window_height)
+            else:
+                # If no pipe, assume far away and zero vertical diff
+                pipes_obs.append(1.0) # Max distance
+                pipes_obs.append(0.0)
+                
         return np.array([
             self.bird_y / self.window_height,
             self.bird_vel / self.max_velocity,
-            dist_to_pipe / self.window_width,
-            gap_y / self.window_height
+            *pipes_obs
         ], dtype=np.float32)
 
     def render(self):
