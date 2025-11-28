@@ -32,6 +32,161 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, BaseCallback, CallbackList
 
 from stickfight.env import StickmanFightEnv
+import gymnasium as gym
+
+
+# -------------------------
+# Curriculum: Wrappers & CB
+# -------------------------
+
+class CurriculumWrapper(gym.Wrapper):
+    """Stage-based curriculum wrapper.
+
+    Stages:
+      0: Exploration (move joints)
+      1: Standing (upright posture)
+      2: Balance (random pushes)
+      3: Approach (move toward opponent)
+      4: Contact/Damage (reward damage)
+      5: Self-Play (use env reward)
+    """
+
+    def __init__(self, env: StickmanFightEnv):
+        super().__init__(env)
+        self.current_stage = 0
+        self._push_cooldown = 0
+
+    # Methods callable via VecEnv.env_method
+    def set_stage(self, stage: int):
+        self.current_stage = int(stage)
+        # opponent policy & role swap policy per stage
+        if self.current_stage < 5:
+            # Static opponent for early stages
+            self.env.role_swap = False
+            self.env.set_opponent_policy(self._static_policy)
+        else:
+            # Hand control back to self-play callback
+            self.env.role_swap = True
+            self.env.set_opponent_policy(None)
+
+    def get_stage(self) -> int:
+        return int(self.current_stage)
+
+    def reset(self, **kwargs):
+        # Ensure correct opponent/roles before episode
+        if self.current_stage < 5:
+            self.env.role_swap = False
+            self.env.set_opponent_policy(self._static_policy)
+        else:
+            self.env.role_swap = True
+        self._push_cooldown = 0
+        return super().reset(**kwargs)
+
+    def step(self, action):
+        obs, base_r, terminated, truncated, info = self.env.step(action)
+
+        # Optionally apply external disturbances in Stage 2
+        if self.current_stage == 2 and not (terminated or truncated):
+            self._maybe_apply_push()
+
+        shaped_r = self._shape_reward(self.current_stage, obs, base_r, info, action)
+        return obs, shaped_r, terminated, truncated, info
+
+    # ---- helpers ----
+    def _static_policy(self, obs):
+        # SB3 predict-like signature: returns (action, state)
+        return np.zeros((10,), dtype=np.float32), None
+
+    def _standing_metric(self) -> float:
+        # Head height relative to feet as in env reward
+        self_idx = self.env.self_index
+        agent = self.env.agent_a if self_idx == 0 else self.env.agent_b
+        head_y = agent.head.position.y
+        l_foot_y = agent.parts['l_lower_leg'].position.y
+        r_foot_y = agent.parts['r_lower_leg'].position.y
+        feet_y = (l_foot_y + r_foot_y) / 2.0
+        return head_y - feet_y
+
+    def _approach_delta(self, info: dict) -> float:
+        # Env already computes approach_reward each step
+        return float(info.get('approach_reward', 0.0))
+
+    def _damage_dealt(self, info: dict) -> float:
+        return float(info.get('damage_dealt_self', 0.0))
+
+    def _maybe_apply_push(self):
+        # Apply a strong but sparse random impulse to the perspective agent torso
+        if self._push_cooldown > 0:
+            self._push_cooldown -= 1
+            return
+        # Roughly one push every ~1-2 seconds of env time
+        self._push_cooldown = np.random.randint(60, 160)
+        agent = self.env.agent_a if self.env.self_index == 0 else self.env.agent_b
+        mag = np.random.uniform(500, 1200)
+        direction = np.random.choice([-1.0, 1.0])
+        impulse = (mag * direction, np.random.uniform(200, 600))
+        try:
+            agent.torso.apply_impulse_at_local_point(impulse)
+        except Exception:
+            pass
+
+    def _shape_reward(self, stage: int, obs: np.ndarray, base_r: float, info: dict, action: np.ndarray) -> float:
+        if stage == 0:
+            # Encourage joint movement (angular velocities in obs indices 10..19)
+            ang_vel = np.abs(obs[10:20]).mean()
+            act_mag = np.abs(action).mean()
+            return 0.5 * ang_vel + 0.5 * act_mag * 0.5
+        if stage == 1:
+            # Standing upright
+            h = self._standing_metric()
+            return 0.02 * h - 0.5  # centered around ~0 when low
+        if stage == 2:
+            # Standing + recovering from pushes
+            h = self._standing_metric()
+            vel_pen = np.abs(obs[12]) * 0.01  # |vy| small penalty
+            return 0.02 * h - 0.5 - vel_pen
+        if stage == 3:
+            # Move toward opponent (use env approach delta aggressively)
+            return 5.0 * self._approach_delta(info)
+        if stage == 4:
+            # Reward damage + some approach
+            return 2.0 * self._damage_dealt(info) + 2.0 * self._approach_delta(info)
+        # stage >= 5 -> use environment's combat reward
+        return float(base_r)
+
+
+class CurriculumStageCallback(BaseCallback):
+    def __init__(self, stage_steps: list[int], verbose=0):
+        super().__init__(verbose)
+        self.stage_steps = stage_steps
+        self.boundaries = np.cumsum(stage_steps).tolist()
+        self.current_stage = 0
+
+    def _stage_from_t(self, t: int) -> int:
+        for idx, b in enumerate(self.boundaries):
+            if t < b:
+                return idx
+        return len(self.stage_steps)  # final stage index (5)
+
+    def _on_training_start(self) -> None:
+        # Initialize all workers to stage 0
+        try:
+            self.training_env.env_method('set_stage', 0)
+        except Exception:
+            pass
+
+    def _on_step(self) -> bool:
+        t = self.num_timesteps
+        stage = self._stage_from_t(t)
+        if stage != self.current_stage:
+            self.current_stage = stage
+            try:
+                self.training_env.env_method('set_stage', int(stage))
+            except Exception:
+                pass
+            if self.verbose:
+                print(f"[Curriculum] Switched to stage {stage} at {t} timesteps")
+        return True
 
 
 def make_env(render: bool = False):
@@ -46,7 +201,7 @@ def make_env(render: bool = False):
 
 
 class SelfPlayCallback(BaseCallback):
-    def __init__(self, warmup_steps, snapshot_interval, checkpoint_interval, device, verbose=0):
+    def __init__(self, warmup_steps, snapshot_interval, checkpoint_interval, device, start_timestep: int = 0, verbose=0):
         super().__init__(verbose)
         self.warmup_steps = warmup_steps
         self.half_warmup_steps = warmup_steps // 2
@@ -55,6 +210,7 @@ class SelfPlayCallback(BaseCallback):
         self.device = device
         self.opponent_model = None
         self.static_attached = False
+        self.start_timestep = int(start_timestep)
 
     def _attach_opponent_policy(self):
         if hasattr(self.training_env, "envs"):
@@ -106,6 +262,12 @@ class SelfPlayCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         t = self.num_timesteps
+        # Do nothing until curriculum enters self-play stage
+        if t < self.start_timestep:
+            return True
+        # Initialize self-play opponent as soon as we enter self-play
+        if self.opponent_model is None:
+            self._make_snapshot()
         if t == self.half_warmup_steps:
             self._attach_static_opponent()
         if t == self.warmup_steps:
@@ -126,13 +288,21 @@ def parse_args():
     p.add_argument("--warmup-steps", type=int, default=1_000_000)
     p.add_argument("--snapshot-interval", type=int, default=500_000)
     p.add_argument("--checkpoint-interval", type=int, default=100_000)
+    p.add_argument(
+        "--stage-steps",
+        type=str,
+        default="200000,200000,200000,300000,300000",
+        help="Comma-separated timesteps for stages 0..4; stage 5 uses the remaining",
+    )
     return p.parse_args()
 
 
 def build_vec_env(num_envs: int):
+    def _make_wrapped():
+        return CurriculumWrapper(make_env(render=False)())
     if num_envs == 1:
-        return DummyVecEnv([make_env(render=False)])
-    return SubprocVecEnv([make_env(render=False) for _ in range(num_envs)])
+        return DummyVecEnv([_make_wrapped])
+    return SubprocVecEnv([_make_wrapped for _ in range(num_envs)])
 
 
 def main():
@@ -146,6 +316,15 @@ def main():
 
     # Ensure n_steps is divisible by num_envs (SB3 requirement)
     n_steps = args.n_steps_per_env * args.num_envs
+
+    # Parse curriculum stage steps (0..4)
+    try:
+        stage_steps = [int(x.strip()) for x in args.stage_steps.split(',') if x.strip()]
+    except Exception:
+        stage_steps = [200_000, 200_000, 200_000, 300_000, 300_000]
+    if len(stage_steps) != 5:
+        stage_steps = (stage_steps + [200_000]*5)[:5]
+    self_play_start_t = sum(stage_steps)
 
     model = PPO(
         "MlpPolicy",
@@ -169,7 +348,10 @@ def main():
         render=False,
     )
 
-    callbacks_list = [eval_cb]
+    # Curriculum stage scheduler
+    curr_cb = CurriculumStageCallback(stage_steps=stage_steps, verbose=1)
+
+    callbacks_list = [eval_cb, curr_cb]
     if not args.no_self_play:
         callbacks_list.append(
             SelfPlayCallback(
@@ -177,6 +359,7 @@ def main():
                 args.snapshot_interval,
                 args.checkpoint_interval,
                 device,
+                start_timestep=self_play_start_t,
                 verbose=1,
             )
         )

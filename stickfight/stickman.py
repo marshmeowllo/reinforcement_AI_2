@@ -348,44 +348,6 @@ class Stickman:
             if self.ground_contacts > 0 and i in [5,6,7,8,9] and self.is_prone():
                 force_scale = min(1.4, force_scale * 1.3)
             motor.max_force = self.base_motor_forces[i] * force_scale
-            
-            # Collect diagnostic data for key joints
-            if i in [5, 6, 7, 8]:  # hips and knees
-                diagnostic_data.append({
-                    'joint': i,
-                    'action': action[i],
-                    'error': error,
-                    'rate': rate,
-                    'max_rate': max_rate,
-                    'saturated': is_saturated,
-                    'force_scale': force_scale
-                })
-            
-            # Collect diagnostic data for key joints
-            if i in [5, 6, 7, 8]:  # hips and knees
-                diagnostic_data.append({
-                    'joint': i,
-                    'action': action[i],
-                    'error': error,
-                    'rate': rate,
-                    'max_rate': max_rate,
-                    'saturated': is_saturated,
-                    'force_scale': force_scale
-                })
-        
-        # Log saturation summary every 50 steps
-        self.saturation_history.append(saturation_count)
-        if self.step_counter % 50 == 0:
-            avg_sat = sum(self.saturation_history[-50:]) / min(50, len(self.saturation_history))
-            print(f"\n[Agent {self.agent_index}] Step {self.step_counter}: Saturated motors {saturation_count}/10 (avg: {avg_sat:.1f})")
-            if diagnostic_data:
-                print(f"  Sample diagnostics (hips/knees):")
-                for d in diagnostic_data[:2]:  # show first 2
-                    joint_names = ['L_Hip', 'R_Hip', 'L_Knee', 'R_Knee']
-                    idx = [5, 6, 7, 8].index(d['joint'])
-                    print(f"    {joint_names[idx]}: action={d['action']:+.2f} error={d['error']:+.3f} "
-                          f"rate={d['rate']:+.1f}/{d['max_rate']:.1f} {'[SAT]' if d['saturated'] else ''} "
-                          f"force_scale={d['force_scale']:.2f}")
 
     def joint_states(self) -> Tuple[List[float], List[float]]:
         angles = []
