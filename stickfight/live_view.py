@@ -7,6 +7,7 @@ import os
 import time
 import glob
 import argparse
+
 from stable_baselines3 import PPO
 from stickfight.env import StickmanFightEnv
 

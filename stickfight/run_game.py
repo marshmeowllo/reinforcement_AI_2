@@ -10,9 +10,10 @@ Reward rule:
 Usage:
     powershell> python run_game.py
 """
-from stickfight.env import StickmanFightEnv
-import numpy as np
 import random
+import numpy as np
+
+from stickfight.env import StickmanFightEnv
 
 def randomize_base_torques(env):
     # Randomize persistent base torques used each step by the PD controller

@@ -1,6 +1,7 @@
 import math
-from typing import List, Tuple
 import pymunk
+
+from typing import List, Tuple
 
 # Constants for body sizing (tweakable)
 HEAD_RADIUS = 15

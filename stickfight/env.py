@@ -26,9 +26,10 @@ class StickmanEnvConfig:
     DAMP_LINEAR: float = 0.995              # reduced damping to allow momentum buildup for recovery
     DAMP_ANGULAR: float = 0.98              # reduced angular damping for better joint movement
     GROUND_COLLISION_TYPE: int = 99         # Ground collision type
+    RENDER_MODES: List[str] = ("human", "rgb_array")
+    RENDER_FPS: int = 60
 
 class StickmanFightEnv(gym.Env):
-    metadata = {"render_modes": ["human"], "render_fps": 60}
 
     def __init__(self, render_mode: Optional[str] = None, dummy_policy: str = "random", role_swap: bool = True, opponent_policy=None):
         super().__init__()
@@ -412,7 +413,7 @@ class StickmanFightEnv(gym.Env):
         pygame.draw.rect(self.screen, (200, 60, 40), pygame.Rect(StickmanEnvConfig.SCREEN_WIDTH - 40 - bar_w, 20, int(bar_w * b_ratio), bar_h))
 
         pygame.display.flip()
-        self.clock.tick(self.metadata['render_fps'])
+        self.clock.tick(StickmanEnvConfig.RENDER_FPS)
 
     def close(self):
         if self.screen:

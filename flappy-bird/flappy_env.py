@@ -1,7 +1,7 @@
-import gymnasium as gym
-import numpy as np
-import pygame
 import random
+import pygame
+import numpy as np
+import gymnasium as gym
 
 from dataclasses import dataclass
 from typing import Tuple
