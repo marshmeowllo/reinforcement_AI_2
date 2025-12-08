@@ -1,5 +1,7 @@
 # ignore everything in models directory
 models/
+# ignore everything in logs directory
+logs/
 # ignore virtual environment directories
 myenv/
 venv/
