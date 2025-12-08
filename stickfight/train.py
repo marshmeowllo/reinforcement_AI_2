@@ -53,6 +53,7 @@ class CurriculumWrapper(gym.Wrapper):
     def __init__(self, env: StickmanFightEnv):
         super().__init__(env)
         self.env: StickmanFightEnv = env
+        self.training_env: StickmanFightEnv = env
         self.current_stage: int = 0
         self._push_cooldown: int = 0
 
@@ -156,8 +157,10 @@ class CurriculumWrapper(gym.Wrapper):
 
 
 class CurriculumStageCallback(BaseCallback):
-    def __init__(self, stage_steps: list[int], verbose=0):
+    def __init__(self, stage_steps: list[int], env: StickmanFightEnv, verbose=0):
         super().__init__(verbose)
+        self.verbose = verbose
+        self.training_env: StickmanFightEnv = env
         self.stage_steps = stage_steps
         self.boundaries = np.cumsum(stage_steps).tolist()
         self.current_stage = 0
@@ -349,7 +352,7 @@ def main():
     )
 
     # Curriculum stage scheduler
-    curr_cb = CurriculumStageCallback(stage_steps=stage_steps, verbose=1)
+    curr_cb = CurriculumStageCallback(stage_steps=stage_steps, env=make_env(render=False)(), verbose=1)
 
     callbacks_list = [eval_cb, curr_cb]
     if not args.no_self_play:

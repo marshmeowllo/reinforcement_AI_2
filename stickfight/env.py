@@ -57,7 +57,7 @@ class StickmanFightEnv(gym.Env):
         # HP bars: 2
         obs_dim = 10 + 10 + 4 + 4 + 8 + 2
 
-        self.observation_space = spaces.Box(low=-1.5, high=1.5, shape=(obs_dim,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
         self.space = pymunk.Space()
         self.space.gravity = (0, -50)
 
