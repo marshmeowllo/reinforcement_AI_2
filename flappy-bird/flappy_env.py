@@ -22,7 +22,7 @@ class Config:
     pipe_gap_size: int = 150
     pipe_frequency: int = 1500 # ms
     pipe_dist_spawn: int = 200 # pixels between pipes
-    reward_survive: float = 1.0
+    reward_survive: float = 0.1
     reward_pass_pipe: float = 5.0
     reward_collision: float = -100.0
 
@@ -84,7 +84,7 @@ class FlappyBirdEnv(gym.Env):
         # Reset pipes
         self.pipes = []
         self.last_pipe_x = 0
-        self._spawn_pipe(start_offset=0) # First pipe right at the edge to give immediate feedback
+        self._spawn_pipe(start_offset=0)
         
         self.score = 0
         self.frames_survived = 0
@@ -102,14 +102,13 @@ class FlappyBirdEnv(gym.Env):
         self.bird_vel += self.gravity
         # Clamp velocity
         self.bird_vel = min(self.bird_vel, self.max_velocity)
-        # self.bird_vel = max(self.bird_vel, -self.max_velocity)
+        self.bird_vel = max(self.bird_vel, -self.max_velocity)
 
         self.bird_y += self.bird_vel
 
-        reward = self.reward_survive
-        
         # 2. Update Pipes
         remove_indices = []
+        
         for i, pipe in enumerate(self.pipes):
             pipe['x'] -= self.pipe_speed
             
@@ -117,7 +116,6 @@ class FlappyBirdEnv(gym.Env):
             if not pipe['passed'] and pipe['x'] + self.pipe_width < self.bird_x:
                 pipe['passed'] = True
                 self.score += 1
-                reward += self.reward_pass_pipe
                 
             # Mark for removal
             if pipe['x'] + self.pipe_width < 0:
@@ -125,10 +123,14 @@ class FlappyBirdEnv(gym.Env):
                 
         for i in sorted(remove_indices, reverse=True):
             del self.pipes[i]
-            
+
         # Spawn new pipe if needed
-        last_pipe = self.pipes[-1]
-        if self.window_width - last_pipe['x'] > self.pipe_dist_spawn:
+        if len(self.pipes) > 0:
+            last_pipe = self.pipes[-1]
+            if self.window_width - last_pipe['x'] > self.pipe_dist_spawn:
+                self._spawn_pipe()
+        else:
+            # If no pipes, spawn one
             self._spawn_pipe()
 
         # 3. Check Collisions
@@ -153,14 +155,20 @@ class FlappyBirdEnv(gym.Env):
                 
                 if bird_rect.colliderect(top_rect) or bird_rect.colliderect(bottom_rect):
                     terminated = True
+                    
                     break
         
+        # 4. Return
         if terminated:
             reward = self.reward_collision
+        else:
+            for pipe in self.pipes:
+                if pipe['passed'] and not pipe.get('rewarded', False):
+                    reward += self.reward_pass_pipe
+                    pipe['rewarded'] = True
 
         self.frames_survived += 1
-        
-        # 4. Return
+
         truncated = False # Infinite horizon technically, but we can truncate if needed
         info = {"score": self.score}
         
