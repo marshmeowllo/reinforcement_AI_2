@@ -1,6 +1,7 @@
 import os
 import gymnasium as gym
 from stable_baselines3 import DQN
+from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 from flappy_env import FlappyBirdEnv

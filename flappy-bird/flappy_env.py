@@ -1,26 +1,46 @@
 import gymnasium as gym
-from gymnasium import spaces
 import numpy as np
 import pygame
 import random
 
+from gymnasium import spaces
+from dataclasses import dataclass
+
+@dataclass
+class MetaData:
+    render_modes = ["human", "rgb_array"]
+    render_fps = 60
+
+@dataclass
+class Config:
+    window_width: int = 600
+    window_height: int = 500
+    gravity: float = 0.25
+    flap_strength: float = -5.0
+    max_velocity: float = 8.0
+    pipe_speed: float = 2.0
+    pipe_gap_size: int = 150
+    pipe_frequency: int = 1500 # ms
+    pipe_dist_spawn: int = 200 # pixels between pipes
+
 class FlappyBirdEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
+    metadata = {"render_modes": MetaData.render_modes, "render_fps": MetaData.render_fps}
 
     def __init__(self, render_mode=None):
         super(FlappyBirdEnv, self).__init__()
         
         # Config
-        self.window_width = 600
-        self.window_height = 500
+        self.config = Config()
+        self.window_width = self.config.window_width
+        self.window_height = self.config.window_height
         self.window_size = (self.window_width, self.window_height)
-        self.gravity = 0.25
-        self.flap_strength = -5.0
-        self.max_velocity = 8.0
-        self.pipe_speed = 2.0
-        self.pipe_gap_size = 150
-        self.pipe_frequency = 1500 # ms (not used directly in step, using distance)
-        self.pipe_dist_spawn = 200 # pixels between pipes
+        self.gravity = self.config.gravity
+        self.flap_strength = self.config.flap_strength
+        self.max_velocity = self.config.max_velocity
+        self.pipe_speed = self.config.pipe_speed
+        self.pipe_gap_size = self.config.pipe_gap_size
+        self.pipe_frequency = self.config.pipe_frequency
+        self.pipe_dist_spawn = self.config.pipe_dist_spawn
         
         # Bird properties
         self.bird_x = 50
@@ -32,7 +52,9 @@ class FlappyBirdEnv(gym.Env):
         self.pipe_color = (0, 255, 0)
         
         # RL Spaces
-        # Action: 0 = do nothing, 1 = flap
+
+        # Action: 
+        # 0 = do nothing, 1 = flap
         self.action_space = spaces.Discrete(2)
         
         # Observation: 
