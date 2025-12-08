@@ -4,13 +4,13 @@ import numpy as np
 import gymnasium as gym
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, List
 from gymnasium import spaces
 
 @dataclass
 class MetaData:
-    render_modes = ["human", "rgb_array"]
-    render_fps = 60
+    render_modes: List[str] = ["human", "rgb_array"]
+    render_fps: int = 60
 
 @dataclass
 class FlappyBirdEnvConfig:
@@ -29,8 +29,6 @@ class FlappyBirdEnvConfig:
     reward_collision: float = -100.0
 
 class FlappyBirdEnv(gym.Env):
-    metadata = {"render_modes": MetaData.render_modes, "render_fps": MetaData.render_fps}
-
     def __init__(self, render_mode=None):
         super(FlappyBirdEnv, self).__init__()
         
@@ -251,7 +249,7 @@ class FlappyBirdEnv(gym.Env):
             self.window.blit(canvas, (0, 0))
             pygame.event.pump()
             pygame.display.update()
-            self.clock.tick(self.metadata["render_fps"])
+            self.clock.tick(MetaData.render_fps)
         else:
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)

@@ -11,6 +11,11 @@ from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass
 
 @dataclass
+class MetaData:
+    RENDER_MODES: List[str] = ["human", "rgb_array"]
+    RENDER_FPS: int = 60
+
+@dataclass
 class StickmanEnvConfig:
 
     SCREEN_WIDTH: int = 1000                # enlarged arena width
@@ -26,11 +31,8 @@ class StickmanEnvConfig:
     DAMP_LINEAR: float = 0.995              # reduced damping to allow momentum buildup for recovery
     DAMP_ANGULAR: float = 0.98              # reduced angular damping for better joint movement
     GROUND_COLLISION_TYPE: int = 99         # Ground collision type
-    RENDER_MODES: List[str] = ("human", "rgb_array")
-    RENDER_FPS: int = 60
 
 class StickmanFightEnv(gym.Env):
-
     def __init__(self, render_mode: Optional[str] = None, dummy_policy: str = "random", role_swap: bool = True, opponent_policy=None):
         super().__init__()
         self.render_mode = render_mode
@@ -69,10 +71,12 @@ class StickmanFightEnv(gym.Env):
         left_wall = pymunk.Segment(wall_body, (0, 50), (0, StickmanEnvConfig.SCREEN_HEIGHT - 10), 5)
         right_wall = pymunk.Segment(wall_body, (StickmanEnvConfig.SCREEN_WIDTH, 50), (StickmanEnvConfig.SCREEN_WIDTH, StickmanEnvConfig.SCREEN_HEIGHT - 10), 5)
         ceiling = pymunk.Segment(wall_body, (0, StickmanEnvConfig.SCREEN_HEIGHT - 10), (StickmanEnvConfig.SCREEN_WIDTH, StickmanEnvConfig.SCREEN_HEIGHT - 10), 5)
+        
         for s in (left_wall, right_wall, ceiling):
             s.friction = 1.5  # increased friction for better grip
             s.elasticity = 0.1  # slight bounce to help with recovery
             s.collision_type = StickmanEnvConfig.GROUND_COLLISION_TYPE  # reuse for simplicity (feet may touch walls/ceiling)
+        
         self.space.add(wall_body, left_wall, right_wall, ceiling)
 
         self.agent_a: Optional[Stickman] = None
@@ -90,6 +94,7 @@ class StickmanFightEnv(gym.Env):
         # Pygame initialization if rendering
         self.screen = None
         self.clock = None
+
         if self.render_mode == "human":
             pygame.init()
             self.screen = pygame.display.set_mode((StickmanEnvConfig.SCREEN_WIDTH, StickmanEnvConfig.SCREEN_HEIGHT))
@@ -103,6 +108,7 @@ class StickmanFightEnv(gym.Env):
         """Distance between self agent's torso and opponent's torso."""
         if not (self.agent_a and self.agent_b):
             return 0.0
+        
         self_agent = self.agent_a if self.self_index == 0 else self.agent_b
         opp_agent = self.agent_b if self.self_index == 0 else self.agent_a
         
@@ -110,6 +116,7 @@ class StickmanFightEnv(gym.Env):
         p1 = self_agent.parts['upper_torso'].position
         p2 = opp_agent.parts['upper_torso'].position
         dist = ((p1.x - p2.x)**2 + (p1.y - p2.y)**2)**0.5
+
         return dist
 
     def _setup_collision_handlers(self):
@@ -151,27 +158,34 @@ class StickmanFightEnv(gym.Env):
             v2 = s2.body.velocity
             rel_v = (v1 - v2).length
             damage = rel_v * StickmanEnvConfig.DAMAGE_CONSTANT
+
             if damage <= 0:
                 return
+            
             # Apply damage & knockback
             attacker = self.agent_a if attacker_index == 0 else self.agent_b
             victim = self.agent_a if victim_index == 0 else self.agent_b
             # Update per-agent damage bookkeeping
             self.damage_dealt[attacker_index] += damage
             self.damage_taken[victim_index] += damage
+
             if victim_index == 0:
                 self.hp_a = max(0.0, self.hp_a - damage)
             else:
                 self.hp_b = max(0.0, self.hp_b - damage)
+
             # Knockback impulse
             dir_vec = v1 - v2
+
             if dir_vec.length > 0:
                 impulse = dir_vec.normalized() * damage * StickmanEnvConfig.KNOCKBACK_SCALE
                 victim.torso.apply_impulse_at_local_point((impulse.x, impulse.y))
+
         return _cb
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):
         super().reset(seed=seed)
+
         # Clear space except ground
         for s in list(self.space.shapes):
             if s.collision_type != StickmanEnvConfig.GROUND_COLLISION_TYPE:
@@ -194,6 +208,7 @@ class StickmanFightEnv(gym.Env):
         self.self_index = random.randint(0,1) if self.role_swap else 0
         self._prev_approach_dist = self._aggregate_limb_distance()
         obs = self._get_observation()
+
         return obs, {}
 
     def step(self, action: np.ndarray):
@@ -250,11 +265,13 @@ class StickmanFightEnv(gym.Env):
             'approach_dist': new_dist,
             'self_index': self.self_index,
         }
+
         return obs, reward, terminated, truncated, info
 
     def _dummy_action(self) -> List[float]:
         if self.dummy_policy == "random":
             return [random.uniform(-1, 1) for _ in range(self.action_space.shape[0])]
+        
         # static policy
         return [0.0] * self.action_space.shape[0]
 
@@ -322,6 +339,7 @@ class StickmanFightEnv(gym.Env):
         rel_torso_n = self._normalize_pos(*rel_torso)
 
         limb_rel_norms = []
+
         for name in ['l_hand', 'r_hand', 'l_foot', 'r_foot']:
             pt = opp_limbs[name]
             rel = (pt[0] - com_ax, pt[1] - com_ay)
@@ -356,12 +374,15 @@ class StickmanFightEnv(gym.Env):
         rel_head_n = self._normalize_pos(*rel_head)
         rel_torso_n = self._normalize_pos(*rel_torso)
         limb_rel_norms = []
+
         for name in ['l_hand', 'r_hand', 'l_foot', 'r_foot']:
             pt = limbs[name]
             rel = (pt[0] - com_ax, pt[1] - com_ay)
             limb_rel_norms.extend(self._normalize_pos(*rel))
+
         hp_self_norm = (self.hp_a if opp_index == 0 else self.hp_b) / StickmanEnvConfig.MAX_HP
         hp_opp_norm = (self.hp_b if opp_index == 0 else self.hp_a) / StickmanEnvConfig.MAX_HP
+
         return np.array([
             *angles, *ang_vels,
             torso_angle, vx, vy, feet_flag,
@@ -379,6 +400,8 @@ class StickmanFightEnv(gym.Env):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
+                return ;
+        
         self.screen.fill((30, 30, 30))
 
         # Pymunk's coordinates have origin at bottom-left; Pygame top-left. We'll flip y.
@@ -413,7 +436,7 @@ class StickmanFightEnv(gym.Env):
         pygame.draw.rect(self.screen, (200, 60, 40), pygame.Rect(StickmanEnvConfig.SCREEN_WIDTH - 40 - bar_w, 20, int(bar_w * b_ratio), bar_h))
 
         pygame.display.flip()
-        self.clock.tick(StickmanEnvConfig.RENDER_FPS)
+        self.clock.tick(MetaData.RENDER_FPS)
 
     def close(self):
         if self.screen:
