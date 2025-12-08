@@ -9,7 +9,7 @@ from gymnasium import spaces
 
 @dataclass
 class MetaData:
-    render_modes: List[str] = ["human", "rgb_array"]
+    render_modes: Tuple[str, str] = ("human", "rgb_array")
     render_fps: int = 60
 
 @dataclass

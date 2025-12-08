@@ -29,7 +29,7 @@ import torch
 import numpy as np
 import gymnasium as gym
 
-from stickfight.env import StickmanFightEnv
+from env import StickmanFightEnv
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, BaseCallback, CallbackList
@@ -52,8 +52,9 @@ class CurriculumWrapper(gym.Wrapper):
 
     def __init__(self, env: StickmanFightEnv):
         super().__init__(env)
-        self.current_stage = 0
-        self._push_cooldown = 0
+        self.env: StickmanFightEnv = env
+        self.current_stage: int = 0
+        self._push_cooldown: int = 0
 
     # Methods callable via VecEnv.env_method
     def set_stage(self, stage: int):
@@ -335,7 +336,7 @@ def main():
         batch_size=256,
         ent_coef=0.01,
         gamma=0.99,
-        device="cpu",
+        device=device,
     )
 
     eval_cb = EvalCallback(

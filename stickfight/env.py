@@ -5,19 +5,18 @@ import pymunk
 import numpy as np
 import gymnasium as gym
 
-from .stickman import Stickman
+from stickman import Stickman
 from gymnasium import spaces
 from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass
 
 @dataclass
 class MetaData:
-    RENDER_MODES: List[str] = ["human", "rgb_array"]
+    RENDER_MODES: tuple[str, str] = ("human", "rgb_array")
     RENDER_FPS: int = 60
 
 @dataclass
 class StickmanEnvConfig:
-
     SCREEN_WIDTH: int = 1000                # enlarged arena width
     SCREEN_HEIGHT: int = 700                # enlarged arena height
     PPM: float = 1.0                        # pixels per meter scaling (keep 1 for simplicity)
@@ -42,8 +41,12 @@ class StickmanFightEnv(gym.Env):
         self.opponent_policy = opponent_policy  # callable(obs)->action or None
 
         # Action space: 10 target angles in [-1, 1] for joint motors
-        # 0 Neck, 1 L Shoulder, 2 R Shoulder, 3 L Elbow, 4 R Elbow,
-        # 5 L Hip, 6 R Hip, 7 L Knee, 8 R Knee, 9 Spine
+        # 0 Neck, 
+        # 1 L Shoulder, 2 R Shoulder, 
+        # 3 L Elbow,    4 R Elbow,
+        # 5 L Hip,      6 R Hip, 
+        # 7 L Knee,     8 R Knee, 
+        # 9 Spine
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
 
         # Observation space dimension calculation:
@@ -53,8 +56,8 @@ class StickmanFightEnv(gym.Env):
         # Opponent limbs: relative l_hand,r_hand,l_foot,r_foot (4 * 2 = 8)
         # HP bars: 2
         obs_dim = 10 + 10 + 4 + 4 + 8 + 2
-        self.observation_space = spaces.Box(low=-1.5, high=1.5, shape=(obs_dim,), dtype=np.float32)
 
+        self.observation_space = spaces.Box(low=-1.5, high=1.5, shape=(obs_dim,), dtype=np.float32)
         self.space = pymunk.Space()
         self.space.gravity = (0, -50)
 

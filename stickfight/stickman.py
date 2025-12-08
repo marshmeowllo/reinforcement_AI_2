@@ -2,41 +2,47 @@ import math
 import pymunk
 
 from typing import List, Tuple
+from dataclasses import dataclass
 
-# Constants for body sizing (tweakable)
-HEAD_RADIUS = 15
-# Torso width reduced to match limb thickness
-TORSO_WIDTH = 10
-# Split torso into two sections for improved stability
-UPPER_TORSO_HEIGHT = 40
-LOWER_TORSO_HEIGHT = 20
-TORSO_HEIGHT = UPPER_TORSO_HEIGHT + LOWER_TORSO_HEIGHT
-LIMB_WIDTH = 10
-UPPER_ARM_LENGTH = 35
-LOWER_ARM_LENGTH = 35
-UPPER_LEG_LENGTH = 45
-LOWER_LEG_LENGTH = 45
-# Refined body mass distribution for more realistic inertia
-LOWER_TORSO_MASS = 4.0
-UPPER_TORSO_MASS = 3.0
-HEAD_MASS = 1.5
-UPPER_LIMB_MASS = 1.0
-LOWER_LIMB_MASS = 0.8
+@dataclass
+class BodyPartSizes:
+    # Constants for body sizing (tweakable)
+    HEAD_RADIUS = 15
+    
+    # Torso width reduced to match limb thickness
+    TORSO_WIDTH = 10
 
-# Motor-based control (torque/limits)
-# Max torque values (increased for better ground recovery)
-NECK_TORQUE = 400.0
-SHOULDER_TORQUE = 1500.0
-ELBOW_TORQUE = 1000.0
-HIP_TORQUE = 4000.0
-KNEE_TORQUE = 4000.0
-SPINE_TORQUE = 6000.0
+    # Split torso into two sections for improved stability
+    UPPER_TORSO_HEIGHT = 40
+    LOWER_TORSO_HEIGHT = 20
+    TORSO_HEIGHT = UPPER_TORSO_HEIGHT + LOWER_TORSO_HEIGHT
+    LIMB_WIDTH = 10
+    UPPER_ARM_LENGTH = 35
+    LOWER_ARM_LENGTH = 35
+    UPPER_LEG_LENGTH = 45
+    LOWER_LEG_LENGTH = 45
 
-# Motor controller gains
-# Rebalanced: lower P to reduce saturation, higher D for damping, more rate headroom
-BASE_P_GAIN = 18.0
-DERIVATIVE_GAIN = 7.0
-MAX_MOTOR_RATE = 25.0
+    # Refined body mass distribution for more realistic inertia
+    LOWER_TORSO_MASS = 4.0
+    UPPER_TORSO_MASS = 3.0
+    HEAD_MASS = 1.5
+    UPPER_LIMB_MASS = 1.0
+    LOWER_LIMB_MASS = 0.8
+
+    # Motor-based control (torque/limits)
+    # Max torque values (increased for better ground recovery)
+    NECK_TORQUE = 400.0
+    SHOULDER_TORQUE = 1500.0
+    ELBOW_TORQUE = 1000.0
+    HIP_TORQUE = 4000.0
+    KNEE_TORQUE = 4000.0
+    SPINE_TORQUE = 6000.0
+
+    # Motor controller gains
+    # Rebalanced: lower P to reduce saturation, higher D for damping, more rate headroom
+    BASE_P_GAIN = 18.0
+    DERIVATIVE_GAIN = 7.0
+    MAX_MOTOR_RATE = 25.0
 
 class Stickman:
     """Stickman ragdoll composed of multiple Pymunk bodies and joints.
@@ -119,51 +125,51 @@ class Stickman:
     def _make_segment(self, length: float, pos: Tuple[float, float], mass: float, angle: float = 0.0) -> Tuple[pymunk.Body, pymunk.Shape]:
         a = (-length / 2, 0)
         b = (length / 2, 0)
-        moment = pymunk.moment_for_segment(mass, a, b, LIMB_WIDTH / 2)
+        moment = pymunk.moment_for_segment(mass, a, b, BodyPartSizes.LIMB_WIDTH / 2)
         body = pymunk.Body(mass, moment)
         body.position = pos
         body.angle = angle
-        shape = pymunk.Segment(body, a, b, LIMB_WIDTH / 2)
+        shape = pymunk.Segment(body, a, b, BodyPartSizes.LIMB_WIDTH / 2)
         return body, shape
 
     def _build_ragdoll(self, pos: Tuple[float, float]):
         x, y = pos
         # Lower torso
-        lower_torso_body, lower_torso_shape = self._make_box((TORSO_WIDTH, LOWER_TORSO_HEIGHT), (x, y - (UPPER_TORSO_HEIGHT / 2)), LOWER_TORSO_MASS)
+        lower_torso_body, lower_torso_shape = self._make_box((BodyPartSizes.TORSO_WIDTH, BodyPartSizes.LOWER_TORSO_HEIGHT), (x, y - (BodyPartSizes.UPPER_TORSO_HEIGHT / 2)), BodyPartSizes.LOWER_TORSO_MASS)
         self._add_part(lower_torso_body, lower_torso_shape, "lower_torso", vulnerable=True)
         # Upper torso
-        upper_torso_body, upper_torso_shape = self._make_box((TORSO_WIDTH, UPPER_TORSO_HEIGHT), (x, y + (LOWER_TORSO_HEIGHT / 2)), UPPER_TORSO_MASS)
+        upper_torso_body, upper_torso_shape = self._make_box((BodyPartSizes.TORSO_WIDTH, BodyPartSizes.UPPER_TORSO_HEIGHT), (x, y + (BodyPartSizes.LOWER_TORSO_HEIGHT / 2)), BodyPartSizes.UPPER_TORSO_MASS)
         self._add_part(upper_torso_body, upper_torso_shape, "upper_torso", vulnerable=True)
         # Legacy alias for observation & damage code
         self.parts['torso'] = upper_torso_body
         # Head
-        head_mass = HEAD_MASS
-        head_moment = pymunk.moment_for_circle(head_mass, 0, HEAD_RADIUS)
+        head_mass = BodyPartSizes.HEAD_MASS
+        head_moment = pymunk.moment_for_circle(head_mass, 0, BodyPartSizes.HEAD_RADIUS)
         head_body = pymunk.Body(head_mass, head_moment)
-        head_body.position = (x, y + TORSO_HEIGHT / 2 + HEAD_RADIUS)
-        head_shape = pymunk.Circle(head_body, HEAD_RADIUS)
+        head_body.position = (x, y + BodyPartSizes.TORSO_HEIGHT / 2 + BodyPartSizes.HEAD_RADIUS)
+        head_shape = pymunk.Circle(head_body, BodyPartSizes.HEAD_RADIUS)
         self._add_part(head_body, head_shape, "head", vulnerable=True)
 
         # Arms
-        l_upper_arm_body, l_upper_arm_shape = self._make_segment(UPPER_ARM_LENGTH, (x - TORSO_WIDTH / 2 - UPPER_ARM_LENGTH / 2, y + TORSO_HEIGHT / 2), UPPER_LIMB_MASS)
+        l_upper_arm_body, l_upper_arm_shape = self._make_segment(BodyPartSizes.UPPER_ARM_LENGTH, (x - BodyPartSizes.TORSO_WIDTH / 2 - BodyPartSizes.UPPER_ARM_LENGTH / 2, y + BodyPartSizes.TORSO_HEIGHT / 2), BodyPartSizes.UPPER_LIMB_MASS)
         self._add_part(l_upper_arm_body, l_upper_arm_shape, "l_upper_arm")
-        l_lower_arm_body, l_lower_arm_shape = self._make_segment(LOWER_ARM_LENGTH, (x - TORSO_WIDTH / 2 - UPPER_ARM_LENGTH - LOWER_ARM_LENGTH / 2, y + TORSO_HEIGHT / 2), LOWER_LIMB_MASS)
+        l_lower_arm_body, l_lower_arm_shape = self._make_segment(BodyPartSizes.LOWER_ARM_LENGTH, (x - BodyPartSizes.TORSO_WIDTH / 2 - BodyPartSizes.UPPER_ARM_LENGTH - BodyPartSizes.LOWER_ARM_LENGTH / 2, y + BodyPartSizes.TORSO_HEIGHT / 2), BodyPartSizes.LOWER_LIMB_MASS)
         self._add_part(l_lower_arm_body, l_lower_arm_shape, "l_lower_arm", limb=True)
 
-        r_upper_arm_body, r_upper_arm_shape = self._make_segment(UPPER_ARM_LENGTH, (x + TORSO_WIDTH / 2 + UPPER_ARM_LENGTH / 2, y + TORSO_HEIGHT / 2), UPPER_LIMB_MASS)
+        r_upper_arm_body, r_upper_arm_shape = self._make_segment(BodyPartSizes.UPPER_ARM_LENGTH, (x + BodyPartSizes.TORSO_WIDTH / 2 + BodyPartSizes.UPPER_ARM_LENGTH / 2, y + BodyPartSizes.TORSO_HEIGHT / 2), BodyPartSizes.UPPER_LIMB_MASS)
         self._add_part(r_upper_arm_body, r_upper_arm_shape, "r_upper_arm")
-        r_lower_arm_body, r_lower_arm_shape = self._make_segment(LOWER_ARM_LENGTH, (x + TORSO_WIDTH / 2 + UPPER_ARM_LENGTH + LOWER_ARM_LENGTH / 2, y + TORSO_HEIGHT / 2), LOWER_LIMB_MASS)
+        r_lower_arm_body, r_lower_arm_shape = self._make_segment(BodyPartSizes.LOWER_ARM_LENGTH, (x + BodyPartSizes.TORSO_WIDTH / 2 + BodyPartSizes.UPPER_ARM_LENGTH + BodyPartSizes.LOWER_ARM_LENGTH / 2, y + BodyPartSizes.TORSO_HEIGHT / 2), BodyPartSizes.LOWER_LIMB_MASS)
         self._add_part(r_lower_arm_body, r_lower_arm_shape, "r_lower_arm", limb=True)
 
         # Legs
-        l_upper_leg_body, l_upper_leg_shape = self._make_segment(UPPER_LEG_LENGTH, (x - TORSO_WIDTH / 4, y - TORSO_HEIGHT / 2 - UPPER_LEG_LENGTH / 2), UPPER_LIMB_MASS, math.pi / 2)
+        l_upper_leg_body, l_upper_leg_shape = self._make_segment(BodyPartSizes.UPPER_LEG_LENGTH, (x - BodyPartSizes.TORSO_WIDTH / 4, y - BodyPartSizes.TORSO_HEIGHT / 2 - BodyPartSizes.UPPER_LEG_LENGTH / 2), BodyPartSizes.UPPER_LIMB_MASS, math.pi / 2)
         self._add_part(l_upper_leg_body, l_upper_leg_shape, "l_upper_leg")
-        l_lower_leg_body, l_lower_leg_shape = self._make_segment(LOWER_LEG_LENGTH, (x - TORSO_WIDTH / 4, y - TORSO_HEIGHT / 2 - UPPER_LEG_LENGTH - LOWER_LEG_LENGTH / 2), LOWER_LIMB_MASS, math.pi / 2)
+        l_lower_leg_body, l_lower_leg_shape = self._make_segment(BodyPartSizes.LOWER_LEG_LENGTH, (x - BodyPartSizes.TORSO_WIDTH / 4, y - BodyPartSizes.TORSO_HEIGHT / 2 - BodyPartSizes.UPPER_LEG_LENGTH - BodyPartSizes.LOWER_LEG_LENGTH / 2), BodyPartSizes.LOWER_LIMB_MASS, math.pi / 2)
         self._add_part(l_lower_leg_body, l_lower_leg_shape, "l_lower_leg", limb=True, foot=True)
 
-        r_upper_leg_body, r_upper_leg_shape = self._make_segment(UPPER_LEG_LENGTH, (x + TORSO_WIDTH / 4, y - TORSO_HEIGHT / 2 - UPPER_LEG_LENGTH / 2), UPPER_LIMB_MASS, math.pi / 2)
+        r_upper_leg_body, r_upper_leg_shape = self._make_segment(BodyPartSizes.UPPER_LEG_LENGTH, (x + BodyPartSizes.TORSO_WIDTH / 4, y - BodyPartSizes.TORSO_HEIGHT / 2 - BodyPartSizes.UPPER_LEG_LENGTH / 2), BodyPartSizes.UPPER_LIMB_MASS, math.pi / 2)
         self._add_part(r_upper_leg_body, r_upper_leg_shape, "r_upper_leg")
-        r_lower_leg_body, r_lower_leg_shape = self._make_segment(LOWER_LEG_LENGTH, (x + TORSO_WIDTH / 4, y - TORSO_HEIGHT / 2 - UPPER_LEG_LENGTH - LOWER_LEG_LENGTH / 2), LOWER_LIMB_MASS, math.pi / 2)
+        r_lower_leg_body, r_lower_leg_shape = self._make_segment(BodyPartSizes.LOWER_LEG_LENGTH, (x + BodyPartSizes.TORSO_WIDTH / 4, y - BodyPartSizes.TORSO_HEIGHT / 2 - BodyPartSizes.UPPER_LEG_LENGTH - BodyPartSizes.LOWER_LEG_LENGTH / 2), BodyPartSizes.LOWER_LIMB_MASS, math.pi / 2)
         self._add_part(r_lower_leg_body, r_lower_leg_shape, "r_lower_leg", limb=True, foot=True)
 
         # Joints & motors helper
@@ -190,48 +196,48 @@ class Stickman:
         spine_limit = limit(upper_torso_body, lower_torso_body, -1.0, 1.0)
         self.spine_joint = (upper_torso_body, lower_torso_body)
         # Neck
-        pivot(head_body, upper_torso_body, (x, upper_torso_body.position.y + UPPER_TORSO_HEIGHT / 2))
+        pivot(head_body, upper_torso_body, (x, upper_torso_body.position.y + BodyPartSizes.UPPER_TORSO_HEIGHT / 2))
         # Allow neck to swing both directions more freely
         neck_limit = limit(head_body, upper_torso_body, -1.2, 1.2)
         register_joint_pair(head_body, upper_torso_body)
         self.joint_angle_limits.append((neck_limit.min, neck_limit.max))
         # Shoulders (anchor moved to top edge to eliminate vertical gap appearance)
-        shoulder_y = upper_torso_body.position.y + UPPER_TORSO_HEIGHT / 2 - LIMB_WIDTH / 2
-        pivot(l_upper_arm_body, upper_torso_body, (upper_torso_body.position.x - TORSO_WIDTH / 2, shoulder_y))
+        shoulder_y = upper_torso_body.position.y + BodyPartSizes.UPPER_TORSO_HEIGHT / 2 - BodyPartSizes.LIMB_WIDTH / 2
+        pivot(l_upper_arm_body, upper_torso_body, (upper_torso_body.position.x - BodyPartSizes.TORSO_WIDTH / 2, shoulder_y))
         l_sh_limit = limit(l_upper_arm_body, upper_torso_body, -1.5, 1.5)
         register_joint_pair(l_upper_arm_body, upper_torso_body)
         self.joint_angle_limits.append((l_sh_limit.min, l_sh_limit.max))
-        pivot(r_upper_arm_body, upper_torso_body, (upper_torso_body.position.x + TORSO_WIDTH / 2, shoulder_y))
+        pivot(r_upper_arm_body, upper_torso_body, (upper_torso_body.position.x + BodyPartSizes.TORSO_WIDTH / 2, shoulder_y))
         r_sh_limit = limit(r_upper_arm_body, upper_torso_body, -1.5, 1.5)
         register_joint_pair(r_upper_arm_body, upper_torso_body)
         self.joint_angle_limits.append((r_sh_limit.min, r_sh_limit.max))
         # Elbows
-        pivot(l_lower_arm_body, l_upper_arm_body, (l_upper_arm_body.position.x - UPPER_ARM_LENGTH / 2, l_upper_arm_body.position.y))
+        pivot(l_lower_arm_body, l_upper_arm_body, (l_upper_arm_body.position.x - BodyPartSizes.UPPER_ARM_LENGTH / 2, l_upper_arm_body.position.y))
         # Elbows swing back and forth symmetrically
         l_el_limit = limit(l_lower_arm_body, l_upper_arm_body, -1.6, 1.6)
         register_joint_pair(l_lower_arm_body, l_upper_arm_body)
         self.joint_angle_limits.append((l_el_limit.min, l_el_limit.max))
-        pivot(r_lower_arm_body, r_upper_arm_body, (r_upper_arm_body.position.x + UPPER_ARM_LENGTH / 2, r_upper_arm_body.position.y))
+        pivot(r_lower_arm_body, r_upper_arm_body, (r_upper_arm_body.position.x + BodyPartSizes.UPPER_ARM_LENGTH / 2, r_upper_arm_body.position.y))
         r_el_limit = limit(r_lower_arm_body, r_upper_arm_body, -1.6, 1.6)
         register_joint_pair(r_lower_arm_body, r_upper_arm_body)
         self.joint_angle_limits.append((r_el_limit.min, r_el_limit.max))
         # Hips
-        pivot(l_upper_leg_body, lower_torso_body, (x - TORSO_WIDTH / 4, lower_torso_body.position.y - LOWER_TORSO_HEIGHT / 2))
+        pivot(l_upper_leg_body, lower_torso_body, (x - BodyPartSizes.TORSO_WIDTH / 4, lower_torso_body.position.y - BodyPartSizes.LOWER_TORSO_HEIGHT / 2))
         # Hips swing both directions
         l_hip_limit = limit(l_upper_leg_body, lower_torso_body, -1.6, 1.6)
         register_joint_pair(l_upper_leg_body, lower_torso_body)
         self.joint_angle_limits.append((l_hip_limit.min, l_hip_limit.max))
-        pivot(r_upper_leg_body, lower_torso_body, (x + TORSO_WIDTH / 4, lower_torso_body.position.y - LOWER_TORSO_HEIGHT / 2))
+        pivot(r_upper_leg_body, lower_torso_body, (x + BodyPartSizes.TORSO_WIDTH / 4, lower_torso_body.position.y - BodyPartSizes.LOWER_TORSO_HEIGHT / 2))
         r_hip_limit = limit(r_upper_leg_body, lower_torso_body, -1.6, 1.6)
         register_joint_pair(r_upper_leg_body, lower_torso_body)
         self.joint_angle_limits.append((r_hip_limit.min, r_hip_limit.max))
         # Knees
-        pivot(l_lower_leg_body, l_upper_leg_body, (l_upper_leg_body.position.x, l_upper_leg_body.position.y - UPPER_LEG_LENGTH / 2))
+        pivot(l_lower_leg_body, l_upper_leg_body, (l_upper_leg_body.position.x, l_upper_leg_body.position.y - BodyPartSizes.UPPER_LEG_LENGTH / 2))
         # Knees swing both directions symmetrically
         l_knee_limit = limit(l_lower_leg_body, l_upper_leg_body, -1.4, 1.4)
         register_joint_pair(l_lower_leg_body, l_upper_leg_body)
         self.joint_angle_limits.append((l_knee_limit.min, l_knee_limit.max))
-        pivot(r_lower_leg_body, r_upper_leg_body, (r_upper_leg_body.position.x, r_upper_leg_body.position.y - UPPER_LEG_LENGTH / 2))
+        pivot(r_lower_leg_body, r_upper_leg_body, (r_upper_leg_body.position.x, r_upper_leg_body.position.y - BodyPartSizes.UPPER_LEG_LENGTH / 2))
         r_knee_limit = limit(r_lower_leg_body, r_upper_leg_body, -1.4, 1.4)
         register_joint_pair(r_lower_leg_body, r_upper_leg_body)
         self.joint_angle_limits.append((r_knee_limit.min, r_knee_limit.max))
@@ -246,16 +252,16 @@ class Stickman:
 
         # Create motors aligned with joint_pairs/action indices
         torque_by_index = [
-            NECK_TORQUE,          # 0 neck
-            SHOULDER_TORQUE,      # 1 L shoulder
-            SHOULDER_TORQUE,      # 2 R shoulder
-            ELBOW_TORQUE,         # 3 L elbow
-            ELBOW_TORQUE,         # 4 R elbow
-            HIP_TORQUE,           # 5 L hip
-            HIP_TORQUE,           # 6 R hip
-            KNEE_TORQUE,          # 7 L knee
-            KNEE_TORQUE,          # 8 R knee
-            SPINE_TORQUE,         # 9 spine
+            BodyPartSizes.NECK_TORQUE,          # 0 neck
+            BodyPartSizes.SHOULDER_TORQUE,      # 1 L shoulder
+            BodyPartSizes.SHOULDER_TORQUE,      # 2 R shoulder
+            BodyPartSizes.ELBOW_TORQUE,         # 3 L elbow
+            BodyPartSizes.ELBOW_TORQUE,         # 4 R elbow
+            BodyPartSizes.HIP_TORQUE,           # 5 L hip
+            BodyPartSizes.HIP_TORQUE,           # 6 R hip
+            BodyPartSizes.KNEE_TORQUE,          # 7 L knee
+            BodyPartSizes.KNEE_TORQUE,          # 8 R knee
+            BodyPartSizes.SPINE_TORQUE,         # 9 spine
         ]
         self.base_motor_forces: List[float] = []
         for i, (a, b) in enumerate(self.joint_pairs):
@@ -316,7 +322,7 @@ class Stickman:
             rel_ang_vel = a_body.angular_velocity - b_body.angular_velocity
             # PD controller: command relative angular velocity (motor.rate) proportional to angle error and
             # damped by relative angular velocity to curb overshoot.
-            rate = BASE_P_GAIN * error - DERIVATIVE_GAIN * rel_ang_vel
+            rate = BodyPartSizes.BASE_P_GAIN * error - BodyPartSizes.DERIVATIVE_GAIN * rel_ang_vel
 
             recovery_boost = 1.0
             if self.ground_contacts > 0 and i in [5, 6, 7, 8, 9]:
@@ -328,7 +334,7 @@ class Stickman:
                 else:
                     recovery_boost = 1.3
             rate *= recovery_boost
-            max_rate = MAX_MOTOR_RATE * recovery_boost
+            max_rate = BodyPartSizes.MAX_MOTOR_RATE * recovery_boost
             
             # Check saturation BEFORE clamping
             is_saturated = abs(rate) >= max_rate * 0.98
