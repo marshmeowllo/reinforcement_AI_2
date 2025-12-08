@@ -3,8 +3,9 @@ import numpy as np
 import pygame
 import random
 
-from gymnasium import spaces
 from dataclasses import dataclass
+from typing import Tuple
+from gymnasium import spaces
 
 @dataclass
 class MetaData:
@@ -12,9 +13,10 @@ class MetaData:
     render_fps = 60
 
 @dataclass
-class Config:
+class FlappyBirdEnvConfig:
     window_width: int = 600
     window_height: int = 500
+    window_size: Tuple[int, int] = (window_width, window_height)
     gravity: float = 0.25
     flap_strength: float = -2.5
     max_velocity: float = 8.0
@@ -31,22 +33,6 @@ class FlappyBirdEnv(gym.Env):
 
     def __init__(self, render_mode=None):
         super(FlappyBirdEnv, self).__init__()
-        
-        # Config
-        self.config = Config()
-        self.window_width = self.config.window_width
-        self.window_height = self.config.window_height
-        self.window_size = (self.window_width, self.window_height)
-        self.gravity = self.config.gravity
-        self.flap_strength = self.config.flap_strength
-        self.max_velocity = self.config.max_velocity
-        self.pipe_speed = self.config.pipe_speed
-        self.pipe_gap_size = self.config.pipe_gap_size
-        self.pipe_frequency = self.config.pipe_frequency
-        self.pipe_dist_spawn = self.config.pipe_dist_spawn
-        self.reward_survive = self.config.reward_survive
-        self.reward_pass_pipe = self.config.reward_pass_pipe
-        self.reward_collision = self.config.reward_collision
         
         # Bird properties
         self.bird_x = 50
@@ -78,7 +64,7 @@ class FlappyBirdEnv(gym.Env):
         super().reset(seed=seed)
         
         # Reset bird
-        self.bird_y = self.window_height // 2
+        self.bird_y = FlappyBirdEnvConfig.window_height // 2
         self.bird_vel = 0
         
         # Reset pipes
@@ -97,12 +83,12 @@ class FlappyBirdEnv(gym.Env):
     def step(self, action):
         # 1. Update Bird
         if action == 1:
-            self.bird_vel = self.flap_strength
+            self.bird_vel = FlappyBirdEnvConfig.flap_strength
         
-        self.bird_vel += self.gravity
+        self.bird_vel += FlappyBirdEnvConfig.gravity
         # Clamp velocity
-        self.bird_vel = min(self.bird_vel, self.max_velocity)
-        self.bird_vel = max(self.bird_vel, -self.max_velocity)
+        self.bird_vel = min(self.bird_vel, FlappyBirdEnvConfig.max_velocity)
+        self.bird_vel = max(self.bird_vel, -FlappyBirdEnvConfig.max_velocity)
 
         self.bird_y += self.bird_vel
 
@@ -110,7 +96,7 @@ class FlappyBirdEnv(gym.Env):
         remove_indices = []
         
         for i, pipe in enumerate(self.pipes):
-            pipe['x'] -= self.pipe_speed
+            pipe['x'] -= FlappyBirdEnvConfig.pipe_speed
             
             # Check if passed
             if not pipe['passed'] and pipe['x'] + self.pipe_width < self.bird_x:
@@ -127,7 +113,7 @@ class FlappyBirdEnv(gym.Env):
         # Spawn new pipe if needed
         if len(self.pipes) > 0:
             last_pipe = self.pipes[-1]
-            if self.window_width - last_pipe['x'] > self.pipe_dist_spawn:
+            if FlappyBirdEnvConfig.window_width - last_pipe['x'] > FlappyBirdEnvConfig.pipe_dist_spawn:
                 self._spawn_pipe()
         else:
             # If no pipes, spawn one
@@ -135,10 +121,10 @@ class FlappyBirdEnv(gym.Env):
 
         # 3. Check Collisions
         terminated = False
-        reward = self.reward_survive
+        reward = FlappyBirdEnvConfig.reward_survive
         
         # Ground/Ceiling collision
-        if self.bird_y - self.bird_radius < 0 or self.bird_y + self.bird_radius > self.window_height:
+        if self.bird_y - self.bird_radius < 0 or self.bird_y + self.bird_radius > FlappyBirdEnvConfig.window_height:
             terminated = True
             
         # Pipe collision
@@ -150,8 +136,8 @@ class FlappyBirdEnv(gym.Env):
                 # Top pipe rect
                 top_rect = pygame.Rect(pipe['x'], 0, self.pipe_width, pipe['gap_y'])
                 # Bottom pipe rect
-                bottom_rect_y = pipe['gap_y'] + self.pipe_gap_size
-                bottom_rect = pygame.Rect(pipe['x'], bottom_rect_y, self.pipe_width, self.window_height - bottom_rect_y)
+                bottom_rect_y = pipe['gap_y'] + FlappyBirdEnvConfig.pipe_gap_size
+                bottom_rect = pygame.Rect(pipe['x'], bottom_rect_y, self.pipe_width, FlappyBirdEnvConfig.window_height - bottom_rect_y)
                 
                 if bird_rect.colliderect(top_rect) or bird_rect.colliderect(bottom_rect):
                     terminated = True
@@ -160,11 +146,11 @@ class FlappyBirdEnv(gym.Env):
         
         # 4. Return
         if terminated:
-            reward = self.reward_collision
+            reward = FlappyBirdEnvConfig.reward_collision
         else:
             for pipe in self.pipes:
                 if pipe['passed'] and not pipe.get('rewarded', False):
-                    reward += self.reward_pass_pipe
+                    reward += FlappyBirdEnvConfig.reward_pass_pipe
                     pipe['rewarded'] = True
 
         self.frames_survived += 1
@@ -181,12 +167,12 @@ class FlappyBirdEnv(gym.Env):
         # Gap Y is the top of the gap.
         # Min gap y = 50, Max gap y = window_height - 50 - gap_size
         min_y = 50
-        max_y = self.window_height - 50 - self.pipe_gap_size
+        max_y = FlappyBirdEnvConfig.window_height - 50 - FlappyBirdEnvConfig.pipe_gap_size
         gap_y = random.randint(min_y, max_y)
         
-        x_pos = self.window_width + start_offset
+        x_pos = FlappyBirdEnvConfig.window_width + start_offset
         if len(self.pipes) > 0:
-             x_pos = max(x_pos, self.pipes[-1]['x'] + self.pipe_dist_spawn)
+             x_pos = max(x_pos, self.pipes[-1]['x'] + FlappyBirdEnvConfig.pipe_dist_spawn)
              
         self.pipes.append({
             'x': x_pos,
@@ -206,20 +192,20 @@ class FlappyBirdEnv(gym.Env):
             if i < len(future_pipes):
                 pipe = future_pipes[i]
                 dist_x = pipe['x'] - self.bird_x
-                gap_center_y = pipe['gap_y'] + (self.pipe_gap_size / 2)
+                gap_center_y = pipe['gap_y'] + (FlappyBirdEnvConfig.pipe_gap_size / 2)
                 dist_y = gap_center_y - self.bird_y
                 
                 # Normalize
-                pipes_obs.append(dist_x / self.window_width)
-                pipes_obs.append(dist_y / self.window_height)
+                pipes_obs.append(dist_x / FlappyBirdEnvConfig.window_width)
+                pipes_obs.append(dist_y / FlappyBirdEnvConfig.window_height)
             else:
                 # If no pipe, assume far away and zero vertical diff
                 pipes_obs.append(1.0) # Max distance
                 pipes_obs.append(0.0)
                 
         return np.array([
-            self.bird_y / self.window_height,
-            self.bird_vel / self.max_velocity,
+            self.bird_y / FlappyBirdEnvConfig.window_height,
+            self.bird_vel / FlappyBirdEnvConfig.max_velocity,
             *pipes_obs
         ], dtype=np.float32)
 
@@ -231,7 +217,7 @@ class FlappyBirdEnv(gym.Env):
         if self.window is None and self.render_mode == "human":
             pygame.init()
             pygame.display.init()
-            self.window = pygame.display.set_mode(self.window_size)
+            self.window = pygame.display.set_mode(FlappyBirdEnvConfig.window_size)
             pygame.display.set_caption("Flappy Bird RL")
             
         if self.clock is None and self.render_mode == "human":
@@ -241,7 +227,7 @@ class FlappyBirdEnv(gym.Env):
             pygame.font.init()
             self.font = pygame.font.SysFont("Arial", 30)
 
-        canvas = pygame.Surface(self.window_size)
+        canvas = pygame.Surface(FlappyBirdEnvConfig.window_size)
         canvas.fill((135, 206, 235)) # Sky blue
         
         # Draw Pipes
@@ -250,9 +236,9 @@ class FlappyBirdEnv(gym.Env):
             pygame.draw.rect(canvas, self.pipe_color, 
                              (pipe['x'], 0, self.pipe_width, pipe['gap_y']))
             # Bottom pipe
-            bottom_y = pipe['gap_y'] + self.pipe_gap_size
+            bottom_y = pipe['gap_y'] + FlappyBirdEnvConfig.pipe_gap_size
             pygame.draw.rect(canvas, self.pipe_color,
-                             (pipe['x'], bottom_y, self.pipe_width, self.window_height - bottom_y))
+                             (pipe['x'], bottom_y, self.pipe_width, FlappyBirdEnvConfig.window_height - bottom_y))
             
         # Draw Bird
         pygame.draw.circle(canvas, self.bird_color, (int(self.bird_x), int(self.bird_y)), self.bird_radius)
