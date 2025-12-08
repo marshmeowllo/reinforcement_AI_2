@@ -1,5 +1,8 @@
 import os
+import torch
+import torch.nn as nn
 import gymnasium as gym
+
 from stable_baselines3 import DQN
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
@@ -22,18 +25,27 @@ def make_env():
         return env
     return _init
 
+# baseline
+# reduce flap_strength from -5.0 to -2.5
+# increase exploration fraction from 0.3 to 0.5
+# reduce tau from 1.0 to 0.05
+# increase buffer size from 100,000 to 1,000,000, exploration_initial_eps from 1.0 to 0.1, exploration_fraction from 0.5 to 0.1
+
 def main():
     # Initialize environment
     env = DummyVecEnv([make_env()])
     eval_env = DummyVecEnv([make_env()])
 
+    net_arch = [512, 256, 128]
+    activation_fn = nn.SiLU
+
     # Initialize Agent
     # MlpPolicy is suitable for vector observations
-    model = DQN("MlpPolicy", env, verbose=1, tensorboard_log=log_dir, 
-                learning_rate=1e-4, buffer_size=100_000, learning_starts=5_000, batch_size=64,
-                target_update_interval=1_000, tau=1.0, train_freq=4, gradient_steps=1,
-                exploration_initial_eps=1.0, exploration_fraction=0.3, exploration_final_eps=0.01,
-                gamma=0.99)
+    model = DQN("MlpPolicy", env, verbose=0, tensorboard_log=log_dir, 
+                learning_rate=1e-4, buffer_size=1_000_000, learning_starts=5_000, batch_size=64,
+                target_update_interval=1_000, tau=0.05, train_freq=4, gradient_steps=1,
+                exploration_initial_eps=0.1, exploration_fraction=0.1, exploration_final_eps=0.0001,
+                policy_kwargs=dict(net_arch=net_arch,activation_fn=activation_fn,normalize_images=False), gamma=0.99)
     
     checkpoint_callback = CheckpointCallback(
         save_freq=100_000,
@@ -52,7 +64,8 @@ def main():
 
     # --- Training ---
     print("Starting training...")
-    total_timesteps = 200_000 
+    total_timesteps = 1_000_000
+
     try:
         model.learn(
             total_timesteps=total_timesteps,

@@ -16,7 +16,7 @@ class Config:
     window_width: int = 600
     window_height: int = 500
     gravity: float = 0.25
-    flap_strength: float = -5.0
+    flap_strength: float = -2.5
     max_velocity: float = 8.0
     pipe_speed: float = 2.0
     pipe_gap_size: int = 150
