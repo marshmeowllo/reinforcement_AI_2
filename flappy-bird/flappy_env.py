@@ -22,6 +22,9 @@ class Config:
     pipe_gap_size: int = 150
     pipe_frequency: int = 1500 # ms
     pipe_dist_spawn: int = 200 # pixels between pipes
+    reward_survive: float = 1.0
+    reward_pass_pipe: float = 5.0
+    reward_collision: float = -100.0
 
 class FlappyBirdEnv(gym.Env):
     metadata = {"render_modes": MetaData.render_modes, "render_fps": MetaData.render_fps}
@@ -41,6 +44,9 @@ class FlappyBirdEnv(gym.Env):
         self.pipe_gap_size = self.config.pipe_gap_size
         self.pipe_frequency = self.config.pipe_frequency
         self.pipe_dist_spawn = self.config.pipe_dist_spawn
+        self.reward_survive = self.config.reward_survive
+        self.reward_pass_pipe = self.config.reward_pass_pipe
+        self.reward_collision = self.config.reward_collision
         
         # Bird properties
         self.bird_x = 50
@@ -95,10 +101,12 @@ class FlappyBirdEnv(gym.Env):
         
         self.bird_vel += self.gravity
         # Clamp velocity
-        if self.bird_vel > self.max_velocity:
-            self.bird_vel = self.max_velocity
-            
+        self.bird_vel = min(self.bird_vel, self.max_velocity)
+        # self.bird_vel = max(self.bird_vel, -self.max_velocity)
+
         self.bird_y += self.bird_vel
+
+        reward = self.reward_survive
         
         # 2. Update Pipes
         remove_indices = []
@@ -109,6 +117,7 @@ class FlappyBirdEnv(gym.Env):
             if not pipe['passed'] and pipe['x'] + self.pipe_width < self.bird_x:
                 pipe['passed'] = True
                 self.score += 1
+                reward += self.reward_pass_pipe
                 
             # Mark for removal
             if pipe['x'] + self.pipe_width < 0:
@@ -124,63 +133,30 @@ class FlappyBirdEnv(gym.Env):
 
         # 3. Check Collisions
         terminated = False
-        reward = 1.0 # Survival reward
+        reward = self.reward_survive
         
         # Ground/Ceiling collision
         if self.bird_y - self.bird_radius < 0 or self.bird_y + self.bird_radius > self.window_height:
             terminated = True
-            reward = -100.0
             
         # Pipe collision
         bird_rect = pygame.Rect(self.bird_x - self.bird_radius, self.bird_y - self.bird_radius, 
                                 self.bird_radius * 2, self.bird_radius * 2)
         
-        for pipe in self.pipes:
-            # Top pipe rect
-            top_rect = pygame.Rect(pipe['x'], 0, self.pipe_width, pipe['gap_y'])
-            # Bottom pipe rect
-            bottom_rect_y = pipe['gap_y'] + self.pipe_gap_size
-            bottom_rect = pygame.Rect(pipe['x'], bottom_rect_y, self.pipe_width, self.window_height - bottom_rect_y)
-            
-            if bird_rect.colliderect(top_rect) or bird_rect.colliderect(bottom_rect):
-                terminated = True
-                reward = -100.0
-                break
-        
-        # Bonus for passing pipe (handled in update loop, but let's add to reward here if just passed)
-        # We need to track if we JUST passed a pipe this step.
-        # Actually, let's check the 'passed' flag transition.
-        # Re-iterating to find if we just passed one.
-        # Ideally we do this in the update loop.
-        # Let's refine the update loop logic slightly to add reward there.
-        
-        # Refined reward logic:
-        # Reset reward to 0.1 (small survival reward)
-        reward = 0.1
-        if terminated:
-            reward = -100.0
-        else:
-            # Check for passing pipes
-            for pipe in self.pipes:
-                # We use a slightly different check here to ensure we only count it once per step
-                # The 'passed' flag is set in the update loop above.
-                # Let's move the score update and reward addition here or track it.
-                # To be safe, let's just check if we are exactly in the frame where we passed it.
-                # Or better, check if pipe['passed'] was False at start of step and True now.
-                # For simplicity, I'll trust the update loop above set 'passed' = True.
-                # But I need to know if it happened THIS step.
-                # I'll modify the update loop to return a 'passed_pipe' boolean.
-                pass
-
-        # Let's redo the pipe update part to be cleaner about rewards
-        pass_reward = 0
-        for pipe in self.pipes:
-             if pipe['passed'] and not pipe.get('rewarded', False):
-                 pass_reward = 5.0
-                 pipe['rewarded'] = True
-        
         if not terminated:
-            reward += pass_reward
+            for pipe in self.pipes:
+                # Top pipe rect
+                top_rect = pygame.Rect(pipe['x'], 0, self.pipe_width, pipe['gap_y'])
+                # Bottom pipe rect
+                bottom_rect_y = pipe['gap_y'] + self.pipe_gap_size
+                bottom_rect = pygame.Rect(pipe['x'], bottom_rect_y, self.pipe_width, self.window_height - bottom_rect_y)
+                
+                if bird_rect.colliderect(top_rect) or bird_rect.colliderect(bottom_rect):
+                    terminated = True
+                    break
+        
+        if terminated:
+            reward = self.reward_collision
 
         self.frames_survived += 1
         
