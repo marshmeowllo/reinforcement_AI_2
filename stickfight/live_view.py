@@ -9,7 +9,7 @@ import glob
 import argparse
 
 from stable_baselines3 import PPO
-from stickfight.env import StickmanFightEnv
+from env import StickmanFightEnv
 
 
 def latest_checkpoint(path: str):

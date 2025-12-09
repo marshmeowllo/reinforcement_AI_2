@@ -14,6 +14,7 @@ from dataclasses import dataclass
 class MetaData:
     RENDER_MODES: tuple[str, str] = ("human", "rgb_array")
     RENDER_FPS: int = 60
+from stickman import Stickman
 
 @dataclass
 class StickmanEnvConfig:

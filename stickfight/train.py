@@ -29,10 +29,13 @@ import torch
 import numpy as np
 import gymnasium as gym
 
-from env import StickmanFightEnv
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, BaseCallback, CallbackList
+
+from env import StickmanFightEnv
+import gymnasium as gym
+
 
 # -------------------------
 # Curriculum: Wrappers & CB
