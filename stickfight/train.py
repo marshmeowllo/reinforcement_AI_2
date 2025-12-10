@@ -111,6 +111,9 @@ class CurriculumWrapper(gym.Wrapper):
         feet_y = (l_foot_y + r_foot_y) / 2.0
         return head_y - feet_y
 
+    def set_opponent_policy(self, policy):
+        self.env.set_opponent_policy(policy)
+
     def _approach_delta(self, info: dict) -> float:
         # Env already computes approach_reward each step
         return float(info.get('approach_reward', 0.0))
@@ -160,10 +163,9 @@ class CurriculumWrapper(gym.Wrapper):
 
 
 class CurriculumStageCallback(BaseCallback):
-    def __init__(self, stage_steps: list[int], env: StickmanFightEnv, verbose=0):
+    def __init__(self, stage_steps: list[int], verbose=0):
         super().__init__(verbose)
         self.verbose = verbose
-        self.training_env: StickmanFightEnv = env
         self.stage_steps = stage_steps
         self.boundaries = np.cumsum(stage_steps).tolist()
         self.current_stage = 0
@@ -288,7 +290,7 @@ class SelfPlayCallback(BaseCallback):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--num-envs", type=int, default=1, help="Number of parallel envs (SubprocVecEnv if >1)")
-    p.add_argument("--total-timesteps", type=int, default=3_000_000, help="Total training timesteps")
+    p.add_argument("--total-timesteps", type=int, default=1_000_000, help="Total training timesteps")
     p.add_argument("--n-steps-per-env", type=int, default=256, help="Rollout length per env (adjusted to keep total n_steps divisible)")
     p.add_argument("--no-self-play", action="store_true", help="Disable self-play logic")
     p.add_argument("--warmup-steps", type=int, default=1_000_000)
@@ -332,16 +334,22 @@ def main():
         stage_steps = (stage_steps + [200_000]*5)[:5]
     self_play_start_t = sum(stage_steps)
 
+    policy_kwargs = dict(
+        net_arch=dict(pi=[256, 256], vf=[256, 256]),
+        activation_fn=torch.nn.SiLU,
+    )
+
     model = PPO(
         "MlpPolicy",
         env,
         verbose=1,
         tensorboard_log="tb_logs",
-        learning_rate=3e-4,  # consider 2e-4 if instability observed with larger action dim
+        learning_rate=3e-4,
         n_steps=n_steps,
         batch_size=256,
         ent_coef=0.01,
         gamma=0.99,
+        policy_kwargs=policy_kwargs,
         device=device,
     )
 
@@ -355,7 +363,7 @@ def main():
     )
 
     # Curriculum stage scheduler
-    curr_cb = CurriculumStageCallback(stage_steps=stage_steps, env=make_env(render=False)(), verbose=1)
+    curr_cb = CurriculumStageCallback(stage_steps=stage_steps, verbose=1)
 
     callbacks_list = [eval_cb, curr_cb]
     if not args.no_self_play:

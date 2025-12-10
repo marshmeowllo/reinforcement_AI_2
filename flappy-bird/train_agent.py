@@ -64,7 +64,7 @@ def main():
 
     # --- Training ---
     print("Starting training...")
-    total_timesteps = 1_000_000
+    total_timesteps = 10_000_000
 
     try:
         model.learn(

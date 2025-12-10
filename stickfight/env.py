@@ -280,45 +280,33 @@ class StickmanFightEnv(gym.Env):
         return [0.0] * self.action_space.shape[0]
 
     def _compute_reward(self) -> float:
-        """Compute base reward for the perspective agent.
+        # 1. Combat Reward: Based on damage exchanged THIS step (Delta, not State)
+        # We assume self.damage_dealt/taken are reset every step in step()
+        
+        damage_reward = (self.damage_dealt[self.self_index] - self.damage_taken[self.self_index]) / StickmanEnvConfig.MAX_HP
+        
+        # Scale it up so a hit feels significant compared to the standing bonus
+        # A 10-damage hit becomes +0.5 reward
+        damage_reward *= 5.0 
 
-        New rule (per user request):
-        - If both agents have equal HP, apply a small negative penalty.
-        - Otherwise reward the perspective agent proportionally to the (normalized) HP advantage.
+        # 2. Knockout
+        ko_bonus = 0.0
+        if self.hp_b <= 0 and self.self_index == 0: ko_bonus = 1.0
+        if self.hp_a <= 0 and self.self_index == 1: ko_bonus = 1.0
 
-        We retain a very small standing bonus to encourage agents not to stay knocked down.
-        """
-        hp_self = self.hp_a if self.self_index == 0 else self.hp_b
-        hp_opp = self.hp_b if self.self_index == 0 else self.hp_a
-
-        if hp_self == hp_opp:
-            advantage_reward = -0.01  # tie penalty
-        else:
-            # Positive if self has more HP, negative if less (scaled to 0..1 range)
-            advantage_reward = (hp_self - hp_opp) / StickmanEnvConfig.MAX_HP
-
-        # Standing incentive (scaled to encourage recovery without overpowering HP advantage)
+        # 3. Standing Incentive
         perspective_agent = self.agent_a if self.self_index == 0 else self.agent_b
         head_y = perspective_agent.head.position.y
-        
-        # Calculate average foot height
-        l_foot_y = perspective_agent.parts['l_lower_leg'].position.y
-        r_foot_y = perspective_agent.parts['r_lower_leg'].position.y
-        feet_y = (l_foot_y + r_foot_y) / 2.0
-        
+        feet_y = (perspective_agent.parts['l_lower_leg'].position.y + perspective_agent.parts['r_lower_leg'].position.y) / 2.0
         height_diff = head_y - feet_y
         
-        # Progressive standing bonus based on relative height (head vs feet)
-        if height_diff > 110:  # fully upright (approx 2/3 of total height)
-            standing_bonus = 0.01
-        elif height_diff > 80:  # partially upright  
-            standing_bonus = 0.005
-        elif height_diff > 60 and perspective_agent.ground_contacts <= 2:  # recovering
-            standing_bonus = 0.002  
-        else:  # prone or too low
-            standing_bonus = -0.002  # small penalty for staying down
+        standing_bonus = 0.0
+        if height_diff > 110: 
+            standing_bonus = 0.002 # Small steady "good job" for standing
+        elif height_diff < 60:
+            standing_bonus = -0.005 # Penalty for being on the ground
 
-        return advantage_reward + standing_bonus
+        return damage_reward + ko_bonus + standing_bonus
 
     def _is_terminated(self) -> bool:
         return self.hp_a <= 0 or self.hp_b <= 0

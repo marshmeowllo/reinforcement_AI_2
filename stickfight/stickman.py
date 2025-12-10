@@ -23,26 +23,26 @@ class BodyPartSizes:
     LOWER_LEG_LENGTH = 45
 
     # Refined body mass distribution for more realistic inertia
-    LOWER_TORSO_MASS = 4.0
-    UPPER_TORSO_MASS = 3.0
+    LOWER_TORSO_MASS = 6.0  # Was 4.0
+    UPPER_TORSO_MASS = 5.0  # Was 3.0
     HEAD_MASS = 1.5
-    UPPER_LIMB_MASS = 1.0
-    LOWER_LIMB_MASS = 0.8
-
+    UPPER_LIMB_MASS = 1.2
+    LOWER_LIMB_MASS = 1.0
+    
     # Motor-based control (torque/limits)
     # Max torque values (increased for better ground recovery)
-    NECK_TORQUE = 400.0
-    SHOULDER_TORQUE = 1500.0
-    ELBOW_TORQUE = 1000.0
-    HIP_TORQUE = 4000.0
-    KNEE_TORQUE = 4000.0
-    SPINE_TORQUE = 6000.0
+    NECK_TORQUE = 500.0
+    SHOULDER_TORQUE = 2000.0
+    ELBOW_TORQUE = 1500.0
+    HIP_TORQUE = 6000.0     # Was 4000
+    KNEE_TORQUE = 5000.0
+    SPINE_TORQUE = 8000.0   # Was 6000
 
     # Motor controller gains
     # Rebalanced: lower P to reduce saturation, higher D for damping, more rate headroom
-    BASE_P_GAIN = 18.0
-    DERIVATIVE_GAIN = 7.0
-    MAX_MOTOR_RATE = 25.0
+    BASE_P_GAIN = 35.0
+    DERIVATIVE_GAIN = 2.5
+    MAX_MOTOR_RATE = 30.0
 
 class Stickman:
     """Stickman ragdoll composed of multiple Pymunk bodies and joints.
