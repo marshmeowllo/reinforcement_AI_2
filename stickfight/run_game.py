@@ -13,7 +13,6 @@ Usage:
 from env import StickmanFightEnv
 import numpy as np
 import random
-import numpy as np
 
 def randomize_base_torques(env):
     # Randomize persistent base torques used each step by the PD controller
